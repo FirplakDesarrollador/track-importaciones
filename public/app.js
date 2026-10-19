@@ -1,4 +1,4 @@
-/* COMEX Track · Importaciones — front-end (sin llaves: todo pasa por /api, server.py en local o la función de Vercel) */
+/* COMEX Track · Importaciones — front-end. Los datos pasan por /api (server.py en local o la función de Vercel); el navegador solo conoce la llave anon para iniciar sesión. */
 'use strict';
 
 // ------------------------------------------------------------------ catálogos (= check constraints)
@@ -73,28 +73,74 @@ function toast(msg, ok = true) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 4000);
 }
 
-// ------------------------------------------------------------------ contraseña de acceso (provisional)
-const PWD_KEY = 'comexImpoPwd';
-const getPwd = () => sessionStorage.getItem(PWD_KEY) || '';
+// ------------------------------------------------------------------ inicio de sesión (Supabase Auth)
+let SB = null;          // cliente supabase-js (solo para iniciar sesión; los datos van por /api)
+let AUTH_REQUIRED = true;
+let loaded = false;
 function showLogin(msg) {
   $('loginMsg').textContent = msg || '';
   $('loginMsg').classList.toggle('hidden', !msg);
   $('loginOverlay').classList.remove('hidden');
-  setTimeout(() => $('loginPwd').focus(), 0);
+  $('userBox').classList.add('hidden'); $('userBox').classList.remove('flex');
+  setTimeout(() => $('loginEmail').focus(), 0);
+}
+function showApp(email) {
+  $('loginOverlay').classList.add('hidden'); $('loginMsg').textContent = ''; $('loginMsg').classList.add('hidden');
+  if (email) { $('userEmail').textContent = email; $('userBox').classList.remove('hidden'); $('userBox').classList.add('flex'); }
+}
+async function getToken() {
+  if (!SB) return '';
+  const { data } = await SB.auth.getSession();
+  return (data && data.session && data.session.access_token) || '';
 }
 async function submitLogin(ev) {
   ev.preventDefault();
-  const v = $('loginPwd').value;
-  if (!v) return;
-  sessionStorage.setItem(PWD_KEY, v);
+  const email = $('loginEmail').value.trim(), password = $('loginPwd').value;
+  if (!email || !password || !SB) return;
+  $('loginBtn').disabled = true; $('loginBtn').textContent = 'Entrando…';
+  const { data, error } = await SB.auth.signInWithPassword({ email, password });
+  $('loginBtn').disabled = false; $('loginBtn').textContent = 'Entrar';
+  if (error) {
+    const m = /invalid login/i.test(error.message) ? 'Correo o contraseña incorrectos.'
+      : /not confirmed/i.test(error.message) ? 'El correo no está confirmado.' : 'No pude iniciar sesión: ' + error.message;
+    return showLogin(m);
+  }
   $('loginPwd').value = '';
-  $('loginOverlay').classList.add('hidden');
+  showApp(data.user && data.user.email);
   loadAll();
+}
+async function logout() {
+  if (SB) await SB.auth.signOut().catch(() => {});
+  S.rows = []; loaded = false;
+  showLogin('');
+}
+async function initAuth() {
+  let cfg;
+  try {
+    const r = await fetch('/api/config', { cache: 'no-store' });
+    cfg = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(cfg.message || `Error ${r.status}`);
+  } catch (e) {
+    $('errorBannerText').textContent = 'No pude leer la configuración del servidor: ' + e.message;
+    $('errorBanner').classList.remove('hidden');
+    return;
+  }
+  AUTH_REQUIRED = cfg.authRequired !== false;
+  if (!AUTH_REQUIRED) { loadAll(); return; }   // modo local sin inicio de sesión
+  SB = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, storageKey: 'comex-impo-auth' },
+  });
+  SB.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT' || !session) showLogin($('loginMsg').textContent);
+  });
+  const { data } = await SB.auth.getSession();
+  if (data && data.session) { showApp(data.session.user.email); loadAll(); }
+  else showLogin('');
 }
 
 async function api(path, opts = {}) {
   const headers = opts.body ? { 'Content-Type': 'application/json' } : {};
-  const pwd = getPwd(); if (pwd) headers['x-app-password'] = pwd;
+  const token = await getToken(); if (token) headers['Authorization'] = 'Bearer ' + token;
   const r = await fetch('/api/' + path, {
     method: opts.method || 'GET',
     headers,
@@ -103,9 +149,14 @@ async function api(path, opts = {}) {
   let data = null; const txt = await r.text();
   try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
   if (r.status === 401 && data && data.code === 'AUTH') {
-    const had = !!pwd; sessionStorage.removeItem(PWD_KEY);
-    showLogin(had ? 'Contraseña incorrecta. Inténtalo de nuevo.' : '');
-    const e = new Error('Se requiere la contraseña de acceso.'); e.status = 401; e.auth = true; throw e;
+    if (SB) await SB.auth.signOut().catch(() => {});
+    showLogin(data.message || 'Vuelve a iniciar sesión.');
+    const e = new Error('Se requiere iniciar sesión.'); e.status = 401; e.auth = true; throw e;
+  }
+  if (r.status === 403 && data && data.code === 'FORBIDDEN') {
+    if (SB) await SB.auth.signOut().catch(() => {});
+    showLogin(data.message);
+    const e = new Error(data.message); e.status = 403; e.auth = true; throw e;
   }
   if (!r.ok) { const e = new Error((data && data.message) || `Error ${r.status}`); e.status = r.status; e.data = data; throw e; }
   return data;
@@ -113,13 +164,13 @@ async function api(path, opts = {}) {
 
 function friendlyError(e) {
   const d = e.data || {};
-  if (e.auth) return 'Se requiere la contraseña de acceso.';
-  if (d.code === 'NO_PASSWORD') return d.message;
+  if (e.auth) return e.message;
+  if (d.code === 'NO_CONFIG') return d.message;
   if (d.code === '23505') return 'Ya existe una PO con ese número (#PO debe ser único).';
   if (d.code === '23514') return 'Algún valor no está permitido por la base (lista de opciones): ' + String(d.message || '').split('\n')[0].replace(/^ERROR:\s*/, '');
   if (d.code === '23503') return 'El proveedor o el responsable no existen en la base.';
   if (d.code === '42501' || e.status === 401 || e.status === 403)
-    return 'La llave configurada en .env no tiene permiso para escribir en Supabase. Consulta el README.';
+    return 'La llave del servidor no tiene permiso para escribir en Supabase. Consulta el README.';
   if (d.code === 'PGRST204' || d.code === '42703') return 'Columna desconocida en la base: ' + (d.message || '');
   return e.message || 'Error desconocido';
 }
@@ -542,7 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }));
   ['fSearch'].forEach(id => $(id).addEventListener('input', renderList));
   ['fResponsable', 'fProveedor', 'fPrioridad', 'fEstado', 'fTodas', 'fSoloVencidas'].forEach(id => $(id).addEventListener('change', renderList));
-  $('btnReload').addEventListener('click', loadAll); $('btnRetry').addEventListener('click', loadAll);
+  $('btnReload').addEventListener('click', loadAll); $('btnRetry').addEventListener('click', () => (AUTH_REQUIRED && !SB) ? initAuth() : loadAll());
   $('listBody').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
   $('tblVencidas').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
   $('btnBackList').addEventListener('click', () => showTab('list'));
@@ -550,5 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btnSaveForm').addEventListener('click', saveForm);
   $('btnCancelForm').addEventListener('click', () => { const back = S.editing ? 'detail' : 'list'; S.editing = null; $('navFormLabel').textContent = 'Nueva PO'; showTab(back); });
   $('loginForm').addEventListener('submit', submitLogin);
-  showTab('list'); icons(); loadAll();
+  $('btnLogout').addEventListener('click', logout);
+  showTab('list'); icons(); initAuth();
 });

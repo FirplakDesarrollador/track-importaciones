@@ -23,23 +23,44 @@ Puede correr al mismo tiempo que COMEX Track de exportaciones, porque usa otro p
 ## Publicarlo en Vercel
 
 Estructura del repositorio:
-- `public/`: la página (index.html, app.js, styles.css). Vercel la sirve en la raíz del sitio.
-- `api/proxy.js`: función serverless de Vercel. Atiende `/api/<tabla>` con la misma lista de permisos que `server.py` y agrega la llave de Supabase en el servidor. La llave nunca llega al navegador.
+- `public/`: la página (index.html, app.js, styles.css, `tailwind.css` ya compilado y `vendor/` con Lucide y supabase-js). Vercel la sirve en la raíz del sitio. No depende de ningún CDN.
+- `api/proxy.js`: función serverless de Vercel. Atiende `/api/<tabla>` con la misma lista de permisos que `server.py`, verifica que el usuario haya iniciado sesión y agrega la llave de Supabase en el servidor. La llave `service_role` nunca llega al navegador.
 - `vercel.json`: fija `public` como carpeta de salida y redirige `/api/*` a `api/proxy.js`.
 - `server.py`: modo local (sirve `public/` y hace lo mismo que la función).
 
-Pasos en Vercel:
-1. Importa el repositorio. En **Framework Preset** escoge **Other**. Deja vacíos Build Command, Output Directory e Install Command (se toman de `vercel.json`).
-2. En **Settings → Environment Variables** agrega (para Production y Preview):
-   - `SUPABASE_URL` = `https://ahcrtxmlotzagtwwyvny.supabase.co`
-   - `SUPABASE_KEY` = la llave de Supabase con permiso de escritura (hoy la `service_role`, idealmente ya rotada)
-   - `APP_PASSWORD` = una contraseña larga para entrar al dashboard
-3. Ve a **Deployments** y dale **Redeploy** al último despliegue (las variables solo aplican en despliegues nuevos).
-4. Abre el enlace: el dashboard pide la contraseña antes de mostrar datos.
+### Inicio de sesión (Supabase Auth)
 
-**Contraseña de acceso (medida provisional).** Como el sitio es público y la llave en uso es la `service_role`, la API exige el encabezado `x-app-password` igual a `APP_PASSWORD`. Si `APP_PASSWORD` no está configurada, la función rechaza todo con un error 503. La página pide la contraseña una vez por sesión del navegador y, si es incorrecta, la vuelve a pedir. Es una sola contraseña compartida: **es provisional** hasta agregar el inicio de sesión de Supabase (Auth) con un usuario por persona, permisos por filas (RLS) y una llave limitada en vez de la `service_role`.
+Cada persona entra con su correo y su contraseña. La página inicia sesión con Supabase y manda el token en cada pedido a `/api`. La función revisa el token con Supabase y, si `ALLOWED_EMAILS` está configurada, que el correo esté en la lista. Si falta `SUPABASE_KEY` o `SUPABASE_ANON_KEY`, la función rechaza todo (error 503).
 
-En modo local, si pones `APP_PASSWORD=...` en el `.env`, `server.py` también la pide. Si la dejas vacía, no la pide (solo para uso en tu computador).
+**1. Crear los usuarios en Supabase**
+1. Supabase Dashboard → **Authentication → Users → Add user → Create new user**.
+2. Crea uno por persona, con su contraseña y la casilla **Auto Confirm User** marcada:
+   - catalina.white@firplak.com
+   - laura.buitrago@firplak.com
+   - john.salazar@firplak.com
+3. Recomendado: en **Authentication → Sign In / Providers**, apaga **Allow new users to sign up**, para que nadie más pueda crearse una cuenta. Hoy está encendido.
+
+**2. Variables de entorno en Vercel** (Settings → Environment Variables, para Production y Preview)
+- `SUPABASE_URL` = `https://ahcrtxmlotzagtwwyvny.supabase.co`
+- `SUPABASE_KEY` = la llave con permiso de escritura (hoy la `service_role`, idealmente ya rotada). Nunca llega al navegador.
+- `SUPABASE_ANON_KEY` = la llave `anon` / `publishable` (Supabase → Project Settings → API Keys). Es pública por diseño; la página la usa solo para iniciar sesión.
+- `ALLOWED_EMAILS` = `catalina.white@firplak.com,laura.buitrago@firplak.com,john.salazar@firplak.com`
+- Borra `APP_PASSWORD` (ya no se usa).
+
+**3. Configuración del proyecto en Vercel:** Framework Preset **Other**; Build Command, Output Directory e Install Command vacíos (se toman de `vercel.json`).
+
+**4.** Ve a **Deployments** y dale **Redeploy** (las variables solo aplican en despliegues nuevos). Al abrir el enlace, el dashboard pide correo y contraseña; arriba a la derecha aparece el correo y el botón **Cerrar sesión**.
+
+**Modo local:** si pones `SUPABASE_ANON_KEY=` (y opcionalmente `ALLOWED_EMAILS=`) en el `.env`, `server.py` también pide iniciar sesión. Si no la pones, queda abierto como antes (solo para uso en tu computador).
+
+**Siguiente paso de seguridad:** hoy el servidor escribe con la `service_role`. Lo ideal es activar permisos por filas (RLS) para usuarios autenticados y dejar de usar la `service_role`.
+
+### Si cambias clases de Tailwind
+
+Los estilos están compilados en `public/tailwind.css`. Si agregas clases nuevas en `index.html` o `app.js`, vuelve a generarlo con:
+```
+npx tailwindcss@3.4.16 -c tailwind.config.js -i tailwind.input.css -o public/tailwind.css --minify
+```
 
 ## Cómo se protege la llave
 

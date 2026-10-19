@@ -11,7 +11,6 @@ COMEX Track · Importaciones — servidor local (solo librería estándar de Pyt
 
 Uso:  python server.py        (lee la llave del archivo .env junto a este script)
 """
-import hmac
 import json
 import os
 import sys
@@ -85,10 +84,12 @@ def load_env():
              "    SUPABASE_KEY=<tu llave>")
     if not (url.startswith("https://") or url.startswith("http://127.0.0.1") or url.startswith("http://localhost")):
         fail("SUPABASE_URL debe empezar por https://")
-    return url, key, cfg.get("APP_PASSWORD", "")
+    anon = cfg.get("SUPABASE_ANON_KEY", "")
+    allowed = {e.strip().lower() for e in cfg.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+    return url, key, anon, allowed
 
 
-SUPABASE_URL, SUPABASE_KEY, APP_PASSWORD = load_env()
+SUPABASE_URL, SUPABASE_KEY, SUPABASE_ANON_KEY, ALLOWED_EMAILS = load_env()
 SSL_CTX = ssl.create_default_context()
 ALLOWED_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
 
@@ -153,17 +154,46 @@ class Handler(SimpleHTTPRequestHandler):
 
     do_PUT = do_DELETE
 
+    def _verify_user(self):
+        """Verifica el token de Supabase Auth. Devuelve None si es válido o (código, cuerpo)."""
+        auth = self.headers.get("Authorization") or ""
+        parts = auth.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return 401, {"code": "AUTH", "message": "Inicia sesión para continuar."}
+        req = urllib.request.Request(f"{SUPABASE_URL}/auth/v1/user", headers={
+            "apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {parts[1]}"})
+        try:
+            with urllib.request.urlopen(req, timeout=15, context=SSL_CTX if SUPABASE_URL.startswith("https") else None) as r:
+                user = json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError:
+            return 401, {"code": "AUTH", "message": "La sesión no es válida o venció. Vuelve a iniciar sesión."}
+        except Exception:
+            return 502, {"message": "No pude verificar la sesión con Supabase."}
+        email = str(user.get("email") or "").lower()
+        if not email:
+            return 401, {"code": "AUTH", "message": "La sesión no es válida. Vuelve a iniciar sesión."}
+        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+            return 403, {"code": "FORBIDDEN", "message": f"El usuario {email} no tiene acceso a esta aplicación."}
+        return None
+
     def _proxy(self, method):
         if not self._host_ok() or not self._origin_ok():
             return self._json(403, {"message": "Origen no permitido"})
         parsed = urllib.parse.urlsplit(self.path)
         if not parsed.path.startswith("/api/"):
             return self._json(404, {"message": "No encontrado"})
-        if APP_PASSWORD:
-            given = self.headers.get("x-app-password") or ""
-            if not hmac.compare_digest(given.encode("utf-8"), APP_PASSWORD.encode("utf-8")):
-                return self._json(401, {"code": "AUTH", "message": "Contraseña incorrecta o faltante."})
         resource = parsed.path[len("/api/"):]
+        if resource == "config":
+            if method != "GET":
+                return self._json(405, {"message": "No permitido"})
+            if not SUPABASE_ANON_KEY:
+                return self._json(200, {"authRequired": False})
+            return self._json(200, {"authRequired": True, "supabaseUrl": SUPABASE_URL,
+                                    "supabaseAnonKey": SUPABASE_ANON_KEY})
+        if SUPABASE_ANON_KEY:
+            err = self._verify_user()
+            if err:
+                return self._json(*err)
         if resource not in ALLOWED:
             return self._json(403, {"message": f"Recurso no permitido: {resource}"})
         if method not in ALLOWED[resource]:
@@ -226,7 +256,7 @@ def main():
     print("COMEX Track · Importaciones")
     print(f"  Abierto en:  http://localhost:{PORT}")
     print(f"  Supabase:    {SUPABASE_URL}")
-    print("  Contraseña:  " + ("activada (APP_PASSWORD)" if APP_PASSWORD else "desactivada (solo uso local)"))
+    print("  Inicio de sesión: " + ("activado (Supabase Auth)" if SUPABASE_ANON_KEY else "desactivado (solo uso local)"))
     print("  (Ctrl+C para detener)")
     try:
         srv.serve_forever()

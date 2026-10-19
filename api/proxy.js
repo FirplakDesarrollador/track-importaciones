@@ -2,7 +2,6 @@
 // Reproduce la lista de permisos de server.py. La llave de Supabase solo vive
 // en las variables de entorno de Vercel y nunca llega al navegador.
 'use strict';
-const crypto = require('crypto');
 
 const READ_ONLY = ['GET'];
 const ALLOWED = {
@@ -33,12 +32,6 @@ function send(res, code, obj) {
   res.end(body);
 }
 
-function safeEqual(a, b) {
-  const ha = crypto.createHash('sha256').update(String(a), 'utf8').digest();
-  const hb = crypto.createHash('sha256').update(String(b), 'utf8').digest();
-  return crypto.timingSafeEqual(ha, hb) && String(a).length === String(b).length;
-}
-
 function readRaw(req) {
   return new Promise((resolve, reject) => {
     const chunks = []; let size = 0;
@@ -48,28 +41,30 @@ function readRaw(req) {
   });
 }
 
+// Verifica el token de Supabase Auth del usuario. Devuelve {email} o {error: [code, obj]}
+async function verifyUser(req, url, anon) {
+  const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers['authorization'] || ''));
+  if (!m) return { error: [401, { code: 'AUTH', message: 'Inicia sesión para continuar.' }] };
+  let r;
+  try {
+    r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${m[1]}` }, signal: AbortSignal.timeout(15000) });
+  } catch (e) { return { error: [502, { message: 'No pude verificar la sesión con Supabase.' }] }; }
+  if (r.status !== 200) return { error: [401, { code: 'AUTH', message: 'La sesión no es válida o venció. Vuelve a iniciar sesión.' }] };
+  let user; try { user = await r.json(); } catch { user = null; }
+  const email = String((user && user.email) || '').toLowerCase();
+  if (!email) return { error: [401, { code: 'AUTH', message: 'La sesión no es válida. Vuelve a iniciar sesión.' }] };
+  const allowed = String(process.env.ALLOWED_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length && !allowed.includes(email)) return { error: [403, { code: 'FORBIDDEN', message: `El usuario ${email} no tiene acceso a esta aplicación.` }] };
+  return { email };
+}
+
 module.exports = async function handler(req, res) {
   const method = (req.method || 'GET').toUpperCase();
-  const APP_PASSWORD = process.env.APP_PASSWORD || '';
   const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
   const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
+  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
-  // Falla cerrada: sin contraseña configurada no se atiende nada
-  if (!APP_PASSWORD) {
-    return send(res, 503, { code: 'NO_PASSWORD', message: 'El servidor no tiene configurada la contraseña de acceso (APP_PASSWORD). Configúrala en Vercel y vuelve a desplegar.' });
-  }
-  if (!SUPABASE_URL || !SUPABASE_KEY || !SUPABASE_URL.startsWith('https://')) {
-    return send(res, 503, { message: 'Faltan SUPABASE_URL (https://...) o SUPABASE_KEY en las variables de entorno de Vercel.' });
-  }
-  const given = req.headers['x-app-password'] || '';
-  if (!safeEqual(given, APP_PASSWORD)) {
-    return send(res, 401, { code: 'AUTH', message: 'Contraseña incorrecta o faltante.' });
-  }
-
-  if (method === 'DELETE' || method === 'PUT') return send(res, 405, { message: 'Borrar no está permitido en esta aplicación.' });
-  if (!['GET', 'POST', 'PATCH'].includes(method)) return send(res, 405, { message: 'No permitido' });
-
-  // Ruta: /api/<recurso>?... (la regla de vercel.json puede añadir __path=<recurso>)
+  // Ruta: /api/<recurso>?... (la regla de vercel.json añade __path=<recurso>)
   const u = new URL(req.url || '/', 'http://x');
   const params = new URLSearchParams(u.search);
   let resource = params.get('__path');
@@ -78,6 +73,22 @@ module.exports = async function handler(req, res) {
     if (!u.pathname.startsWith('/api/')) return send(res, 404, { message: 'No encontrado' });
     resource = decodeURIComponent(u.pathname.slice('/api/'.length));
   }
+
+  // Falla cerrada: sin la configuración completa no se atiende nada
+  if (!SUPABASE_URL.startsWith('https://') || !SUPABASE_KEY || !SUPABASE_ANON_KEY) {
+    return send(res, 503, { code: 'NO_CONFIG', message: 'El servidor no está configurado: faltan SUPABASE_URL, SUPABASE_KEY o SUPABASE_ANON_KEY en las variables de entorno de Vercel.' });
+  }
+  // Configuración pública para el navegador (la llave anon es pública por diseño; nunca SUPABASE_KEY)
+  if (resource === 'config') {
+    if (method !== 'GET') return send(res, 405, { message: 'No permitido' });
+    return send(res, 200, { authRequired: true, supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY });
+  }
+  const auth = await verifyUser(req, SUPABASE_URL, SUPABASE_ANON_KEY);
+  if (auth.error) return send(res, auth.error[0], auth.error[1]);
+
+  if (method === 'DELETE' || method === 'PUT') return send(res, 405, { message: 'Borrar no está permitido en esta aplicación.' });
+  if (!['GET', 'POST', 'PATCH'].includes(method)) return send(res, 405, { message: 'No permitido' });
+
   if (!Object.prototype.hasOwnProperty.call(ALLOWED, resource)) return send(res, 403, { message: `Recurso no permitido: ${resource}` });
   if (!ALLOWED[resource].includes(method)) return send(res, 405, { message: `Método ${method} no permitido en ${resource}` });
 
