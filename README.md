@@ -1,11 +1,11 @@
 # track-importaciones
 # COMEX Track · Importaciones
 
-Dashboard local para el seguimiento de las PO de importación. Usa la misma base de Supabase que COMEX Track (tablas `proveedores_impo`, `importaciones` y la vista `v_importaciones_metricas`), pero es una aplicación aparte.
+Dashboard para el seguimiento de las PO de importación. Usa la misma base de Supabase que COMEX Track (tablas `proveedores_impo`, `importaciones` y la vista `v_importaciones_metricas`), pero es una aplicación aparte.
 
 ## Cómo arrancarlo (Windows)
 
-1. Copia la carpeta `dashboard_impo` completa a tu computador (por ejemplo, a `Documentos\dashboard_impo`).
+1. Copia la carpeta completa a tu computador (por ejemplo, a `Documentos\COMEX_Track_Importaciones`).
 2. En esa carpeta, copia `.env.example` y renombra la copia a `.env`. Ábrelo con el Bloc de notas y pega la llave en `SUPABASE_KEY=`:
    ```
    SUPABASE_URL=https://ahcrtxmlotzagtwwyvny.supabase.co
@@ -19,6 +19,27 @@ Dashboard local para el seguimiento de las PO de importación. Usa la misma base
 4. Abre **http://localhost:8001** en el navegador. Para detenerlo, presiona Ctrl+C en la terminal.
 
 Puede correr al mismo tiempo que COMEX Track de exportaciones, porque usa otro puerto (8001).
+
+## Publicarlo en Vercel
+
+Estructura del repositorio:
+- `public/`: la página (index.html, app.js, styles.css). Vercel la sirve en la raíz del sitio.
+- `api/proxy.js`: función serverless de Vercel. Atiende `/api/<tabla>` con la misma lista de permisos que `server.py` y agrega la llave de Supabase en el servidor. La llave nunca llega al navegador.
+- `vercel.json`: fija `public` como carpeta de salida y redirige `/api/*` a `api/proxy.js`.
+- `server.py`: modo local (sirve `public/` y hace lo mismo que la función).
+
+Pasos en Vercel:
+1. Importa el repositorio. En **Framework Preset** escoge **Other**. Deja vacíos Build Command, Output Directory e Install Command (se toman de `vercel.json`).
+2. En **Settings → Environment Variables** agrega (para Production y Preview):
+   - `SUPABASE_URL` = `https://ahcrtxmlotzagtwwyvny.supabase.co`
+   - `SUPABASE_KEY` = la llave de Supabase con permiso de escritura (hoy la `service_role`, idealmente ya rotada)
+   - `APP_PASSWORD` = una contraseña larga para entrar al dashboard
+3. Ve a **Deployments** y dale **Redeploy** al último despliegue (las variables solo aplican en despliegues nuevos).
+4. Abre el enlace: el dashboard pide la contraseña antes de mostrar datos.
+
+**Contraseña de acceso (medida provisional).** Como el sitio es público y la llave en uso es la `service_role`, la API exige el encabezado `x-app-password` igual a `APP_PASSWORD`. Si `APP_PASSWORD` no está configurada, la función rechaza todo con un error 503. La página pide la contraseña una vez por sesión del navegador y, si es incorrecta, la vuelve a pedir. Es una sola contraseña compartida: **es provisional** hasta agregar el inicio de sesión de Supabase (Auth) con un usuario por persona, permisos por filas (RLS) y una llave limitada en vez de la `service_role`.
+
+En modo local, si pones `APP_PASSWORD=...` en el `.env`, `server.py` también la pide. Si la dejas vacía, no la pide (solo para uso en tu computador).
 
 ## Cómo se protege la llave
 

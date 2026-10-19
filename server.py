@@ -3,7 +3,7 @@
 """
 COMEX Track · Importaciones — servidor local (solo librería estándar de Python 3).
 
-- Sirve la página desde la carpeta ./web en http://localhost:8001
+- Sirve la página desde la carpeta ./public en http://localhost:8001
 - Reenvía /api/<tabla> a la API REST de Supabase, agregando la llave AQUÍ,
   en el servidor. La llave nunca llega al navegador.
 - Solo permite las tablas/vista que usa esta app y los métodos GET, POST y PATCH.
@@ -11,6 +11,7 @@ COMEX Track · Importaciones — servidor local (solo librería estándar de Pyt
 
 Uso:  python server.py        (lee la llave del archivo .env junto a este script)
 """
+import hmac
 import json
 import os
 import sys
@@ -28,7 +29,7 @@ for _s in (sys.stdout, sys.stderr):  # consola de Windows sin UTF-8
         pass
 
 BASE_DIR = Path(__file__).resolve().parent
-WEB_DIR = BASE_DIR / "web"
+WEB_DIR = BASE_DIR / "public"
 ENV_FILE = BASE_DIR / ".env"
 PORT = int(os.environ.get("COMEX_IMPO_PORT", "8001"))
 HOST = "127.0.0.1"
@@ -84,10 +85,10 @@ def load_env():
              "    SUPABASE_KEY=<tu llave>")
     if not (url.startswith("https://") or url.startswith("http://127.0.0.1") or url.startswith("http://localhost")):
         fail("SUPABASE_URL debe empezar por https://")
-    return url, key
+    return url, key, cfg.get("APP_PASSWORD", "")
 
 
-SUPABASE_URL, SUPABASE_KEY = load_env()
+SUPABASE_URL, SUPABASE_KEY, APP_PASSWORD = load_env()
 SSL_CTX = ssl.create_default_context()
 ALLOWED_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
 
@@ -158,6 +159,10 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if not parsed.path.startswith("/api/"):
             return self._json(404, {"message": "No encontrado"})
+        if APP_PASSWORD:
+            given = self.headers.get("x-app-password") or ""
+            if not hmac.compare_digest(given.encode("utf-8"), APP_PASSWORD.encode("utf-8")):
+                return self._json(401, {"code": "AUTH", "message": "Contraseña incorrecta o faltante."})
         resource = parsed.path[len("/api/"):]
         if resource not in ALLOWED:
             return self._json(403, {"message": f"Recurso no permitido: {resource}"})
@@ -216,11 +221,12 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     if not (WEB_DIR / "index.html").exists():
-        fail(f"No encuentro la carpeta web/ con index.html en {BASE_DIR}")
+        fail(f"No encuentro la carpeta public/ con index.html en {BASE_DIR}")
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print("COMEX Track · Importaciones")
     print(f"  Abierto en:  http://localhost:{PORT}")
     print(f"  Supabase:    {SUPABASE_URL}")
+    print("  Contraseña:  " + ("activada (APP_PASSWORD)" if APP_PASSWORD else "desactivada (solo uso local)"))
     print("  (Ctrl+C para detener)")
     try:
         srv.serve_forever()

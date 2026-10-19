@@ -1,4 +1,4 @@
-/* COMEX Track · Importaciones — front-end (sin llaves: todo pasa por /api del server.py local) */
+/* COMEX Track · Importaciones — front-end (sin llaves: todo pasa por /api, server.py en local o la función de Vercel) */
 'use strict';
 
 // ------------------------------------------------------------------ catálogos (= check constraints)
@@ -73,20 +73,48 @@ function toast(msg, ok = true) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 4000);
 }
 
+// ------------------------------------------------------------------ contraseña de acceso (provisional)
+const PWD_KEY = 'comexImpoPwd';
+const getPwd = () => sessionStorage.getItem(PWD_KEY) || '';
+function showLogin(msg) {
+  $('loginMsg').textContent = msg || '';
+  $('loginMsg').classList.toggle('hidden', !msg);
+  $('loginOverlay').classList.remove('hidden');
+  setTimeout(() => $('loginPwd').focus(), 0);
+}
+async function submitLogin(ev) {
+  ev.preventDefault();
+  const v = $('loginPwd').value;
+  if (!v) return;
+  sessionStorage.setItem(PWD_KEY, v);
+  $('loginPwd').value = '';
+  $('loginOverlay').classList.add('hidden');
+  loadAll();
+}
+
 async function api(path, opts = {}) {
+  const headers = opts.body ? { 'Content-Type': 'application/json' } : {};
+  const pwd = getPwd(); if (pwd) headers['x-app-password'] = pwd;
   const r = await fetch('/api/' + path, {
     method: opts.method || 'GET',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   let data = null; const txt = await r.text();
   try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
+  if (r.status === 401 && data && data.code === 'AUTH') {
+    const had = !!pwd; sessionStorage.removeItem(PWD_KEY);
+    showLogin(had ? 'Contraseña incorrecta. Inténtalo de nuevo.' : '');
+    const e = new Error('Se requiere la contraseña de acceso.'); e.status = 401; e.auth = true; throw e;
+  }
   if (!r.ok) { const e = new Error((data && data.message) || `Error ${r.status}`); e.status = r.status; e.data = data; throw e; }
   return data;
 }
 
 function friendlyError(e) {
   const d = e.data || {};
+  if (e.auth) return 'Se requiere la contraseña de acceso.';
+  if (d.code === 'NO_PASSWORD') return d.message;
   if (d.code === '23505') return 'Ya existe una PO con ese número (#PO debe ser único).';
   if (d.code === '23514') return 'Algún valor no está permitido por la base (lista de opciones): ' + String(d.message || '').split('\n')[0].replace(/^ERROR:\s*/, '');
   if (d.code === '23503') return 'El proveedor o el responsable no existen en la base.';
@@ -143,7 +171,8 @@ async function loadAll() {
     fillFilters(); renderStats(); renderList(); renderKpi();
     if (S.current) { const c = S.rows.find(r => r.id === S.current.id); if (c) { S.current = c; renderDetail(); } }
   } catch (e) {
-    $('errorBannerText').textContent = 'No pude leer los datos: ' + friendlyError(e) + ' ¿Está corriendo server.py y el .env tiene la llave?';
+    if (e.auth) return;
+    $('errorBannerText').textContent = 'No pude leer los datos: ' + friendlyError(e);
     $('errorBanner').classList.remove('hidden');
   }
   icons();
@@ -520,5 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btnEditPo').addEventListener('click', () => S.current && openForm(S.current));
   $('btnSaveForm').addEventListener('click', saveForm);
   $('btnCancelForm').addEventListener('click', () => { const back = S.editing ? 'detail' : 'list'; S.editing = null; $('navFormLabel').textContent = 'Nueva PO'; showTab(back); });
+  $('loginForm').addEventListener('submit', submitLogin);
   showTab('list'); icons(); loadAll();
 });
