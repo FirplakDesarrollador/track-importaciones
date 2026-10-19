@@ -64,15 +64,19 @@ module.exports = async function handler(req, res) {
   const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
   const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
-  // Ruta: /api/<recurso>?... (la regla de vercel.json añade __path=<recurso>)
+  // Ruta: /api/<recurso>?...  La regla de vercel.json añade __path=<recurso> y Vercel además
+  // agrega el parámetro nombrado (path=<recurso>). Se quitan TODOS los parámetros de ruteo
+  // antes de reenviar, para que PostgREST no los tome como filtros.
   const u = new URL(req.url || '/', 'http://x');
   const params = new URLSearchParams(u.search);
-  let resource = params.get('__path');
-  params.delete('__path');
-  if (resource === null) {
-    if (!u.pathname.startsWith('/api/')) return send(res, 404, { message: 'No encontrado' });
+  const ROUTING = ['__path', 'path', '...path', 'slug'];
+  let resource = params.get('__path') || params.get('path') || params.get('...path') || '';
+  for (const k of ROUTING) params.delete(k);
+  if (!resource && u.pathname.startsWith('/api/') && u.pathname !== '/api/proxy') {
     resource = decodeURIComponent(u.pathname.slice('/api/'.length));
   }
+  resource = String(resource).replace(/^\/+|\/+$/g, '');
+  if (!resource) return send(res, 404, { message: 'No encontrado' });
 
   // Falla cerrada: sin la configuración completa no se atiende nada
   if (!SUPABASE_URL.startsWith('https://') || !SUPABASE_KEY || !SUPABASE_ANON_KEY) {
