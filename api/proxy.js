@@ -18,7 +18,7 @@ const WRITABLE_COLS = new Set([
   'embarcador', 'tipo_carga', 'cant_bultos', 'peso_kg', 'volumen_m3',
   'fecha_bodega_origen', 'fecha_embarque', 'fecha_llegada_puerto', 'fecha_pago_impuestos',
   'fecha_salida_puerto', 'fecha_llegada_firplak', 'fecha_liquidacion', 'fecha_traslado',
-  'consolidada_con', 'observaciones', 'updated_at',
+  'consolidada_con', 'observaciones', 'materiales', 'updated_at',
 ]);
 const MAX_BODY = 256 * 1024;
 

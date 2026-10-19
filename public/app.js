@@ -42,12 +42,13 @@ const FIELDS = [
   { k: 'consolidada_con', sp: 'Consolidada_Con', label: 'Consolidada con', t: 'text', sec: 'otros', ph: 'Otras PO del mismo embarque' },
   { k: 'leadtime_real_dias', sp: 'Leadtime_Real', label: 'Leadtime real (días)', t: 'computed', sec: 'otros' },
   { k: 'observaciones', sp: 'Observaciones', label: 'Observaciones', t: 'textarea', sec: 'otros' },
+  { k: 'materiales', sp: 'Materiales OC', label: 'Materiales de la OC', t: 'materiales', sec: 'mat' },
 ];
 const HITOS = FIELDS.filter(f => f.hito);
 const WRITABLE = FIELDS.filter(f => f.t !== 'computed').map(f => f.k);
 const SECTIONS = [
   ['po', 'Datos de la PO', 'file-text'], ['pago', 'Pago', 'wallet'], ['carga', 'Carga', 'boxes'],
-  ['hitos', 'Hitos del flujo (en orden)', 'milestone'], ['otros', 'Otros', 'message-square'],
+  ['hitos', 'Hitos del flujo (en orden)', 'milestone'], ['otros', 'Otros', 'message-square'], ['mat', 'Materiales de la OC', 'package'],
 ];
 
 // ------------------------------------------------------------------ estado
@@ -64,6 +65,39 @@ const fnum = (v, d = 2) => (v === null || v === undefined || v === '') ? '—' :
 const pct = (a, b) => b ? Math.round(1000 * a / b) / 10 : null;
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const fmes = ym => `${MESES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+// ------------------------------------------------------------------ materiales (jsonb: [{codigo, descripcion, cantidad, unidad}])
+const matList = r => Array.isArray(r?.materiales) ? r.materiales : [];
+const matText = r => matList(r).map(m => `${m.codigo || ''} ${m.descripcion || ''}`).join(' ');
+function matSummary(r) {
+  const m = matList(r); if (!m.length) return '';
+  const first = m[0].descripcion || m[0].codigo || '';
+  return `<div class="mat-sum" title="${esc(m.map(x => `${x.codigo || ''} · ${x.descripcion || ''} · ${x.cantidad ?? ''} ${x.unidad || ''}`).join('\n'))}">📦 ${esc(first)}${m.length > 1 ? ` <b>+${m.length - 1}</b>` : ''}</div>`;
+}
+function matTable(r) {
+  const m = matList(r);
+  if (!m.length) return '<span class="text-slate-400">— Sin materiales registrados</span>';
+  return `<table class="mat-tbl"><thead><tr><th>Código SAP</th><th>Descripción</th><th class="num">Cantidad</th></tr></thead><tbody>${
+    m.map(x => `<tr><td class="mono">${esc(x.codigo || '—')}</td><td>${esc(x.descripcion || '')}</td><td class="num">${fnum(x.cantidad, 3)}${x.unidad ? ' ' + esc(x.unidad) : ''}</td></tr>`).join('')}</tbody></table>`;
+}
+function matRowHtml(x = {}) {
+  return `<div class="mat-row"><input class="inp mono" data-m="codigo" placeholder="Código SAP" value="${esc(x.codigo || '')}">
+    <input class="inp" data-m="descripcion" placeholder="Descripción" value="${esc(x.descripcion || '')}">
+    <input class="inp" type="number" min="0" step="any" data-m="cantidad" placeholder="Cant." value="${x.cantidad ?? ''}">
+    <input class="inp" data-m="unidad" placeholder="UN" value="${esc(x.unidad || '')}">
+    <button type="button" class="mat-del" title="Quitar línea">✕</button></div>`;
+}
+function matSetEditor(list) {
+  const box = $('in_materiales'); if (!box) return;
+  box.querySelector('.mat-rows').innerHTML = (list || []).map(matRowHtml).join('');
+}
+function matReadEditor() {
+  const rows = [...document.querySelectorAll('#in_materiales .mat-rows .mat-row')].map(el => {
+    const g = k => el.querySelector(`[data-m="${k}"]`).value.trim();
+    const c = g('cantidad');
+    return { codigo: g('codigo') || null, descripcion: g('descripcion') || null, cantidad: c === '' ? null : Number(c), unidad: g('unidad') || null };
+  }).filter(x => x.codigo || x.descripcion);
+  return rows.length ? rows : null;
+}
 const icons = () => window.lucide && lucide.createIcons();
 
 function toast(msg, ok = true) {
@@ -268,7 +302,7 @@ function renderList() {
   const rows = S.rows.filter(r =>
     (todas || !CERRADOS.includes(r.estado_eta)) && (!fr || r.responsable_id === fr) && (!fp || r.proveedor_id === fp) &&
     (!fpr || r.prioridad === fpr) && (!fe || r.estado_eta === fe) && (!soloV || r.vencida) &&
-    (!q || [r.numero_po, r.proveedor, r.embarcador, r.observaciones, r.consolidada_con].some(x => (x || '').toLowerCase().includes(q))));
+    (!q || [r.numero_po, r.proveedor, r.embarcador, r.observaciones, r.consolidada_con, matText(r)].some(x => (x || '').toLowerCase().includes(q))));
   // Orden: vencidas primero, luego por ETA (estimada FPK o según OC), sin ETA al final
   const ref = r => r.eta_estimada_fpk || r.eta_segun_oc || '9999';
   rows.sort((a, b) => (b.vencida - a.vencida) || ref(a).localeCompare(ref(b)) || a.numero_po.localeCompare(b.numero_po));
@@ -276,7 +310,7 @@ function renderList() {
   $('listBody').innerHTML = rows.length ? rows.map(r => `
     <tr class="hover:bg-slate-50 cursor-pointer ${r.vencida ? 'row-vencida' : ''}" data-id="${esc(r.id)}">
       <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[120px] max-w-[180px] break-words">${r.vencida ? '<span class="text-rose-600 text-[11px]" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}</td>
-      <td class="px-3 py-2.5 min-w-[200px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-400">${esc(r.pais || '')}</div></td>
+      <td class="px-3 py-2.5 min-w-[200px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-400">${esc(r.pais || '')}</div>${matSummary(r)}</td>
       <td class="px-3 py-2.5">${badgePrio(r.prioridad)}</td>
       <td class="px-3 py-2.5 text-slate-700">${esc(r.responsable || '—')}</td>
       <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r.estado_eta)}</td>
@@ -304,6 +338,7 @@ function fieldDisplay(f, r) {
     case 'number': return f.k === 'valor_po' ? (v == null ? '—' : '$ ' + fnum(v)) : fnum(v, 3);
     case 'bool': return v ? '<span class="text-emerald-700">✓ Sí</span>' : '<span class="text-slate-500">No</span>';
     case 'computed': return v == null ? '<span class="text-slate-400">— (falta llegada a Firplak)</span>' : `${v} días <span class="text-[10px] text-slate-400 font-normal">(calculado)</span>`;
+    case 'materiales': return matTable(r);
     case 'select': return f.k === 'estado_eta' ? badgeEstado(v) : f.k === 'prioridad' ? badgePrio(v) : esc(v || '—');
     default: return v ? esc(v) : '—';
   }
@@ -323,7 +358,7 @@ function renderDetail() {
       ${r.llego_a_tiempo === true ? `A tiempo vs ETA OC (${r.dias_vs_eta_oc} d)` : r.llego_a_tiempo === false ? `Tarde vs ETA OC (+${r.dias_vs_eta_oc} d)` : 'Sin llegada a Firplak'}</div>`;
   renderStepper(r);
   $('detailFields').innerHTML = FIELDS.map((f, i) => `
-    <div class="fld ${f.k === 'observaciones' ? 'sm:col-span-2 lg:col-span-3' : ''}">
+    <div class="fld ${f.k === 'observaciones' || f.k === 'materiales' ? 'sm:col-span-2 lg:col-span-3' : ''}">
       <div class="k">${i + 1}. ${esc(f.label)} <span class="text-slate-300">· ${esc(f.sp)}</span></div>
       <div class="v">${fieldDisplay(f, r)}</div>
     </div>`).join('');
@@ -385,10 +420,11 @@ function inputHtml(f) {
     case 'date': ctl = `<input type="date" ${base}>`; break;
     case 'number': ctl = `<input type="number" min="0" step="${f.step}" ${base}>`; break;
     case 'textarea': ctl = `<textarea rows="3" ${base}></textarea>`; break;
+    case 'materiales': ctl = `<div id="${id}" class="mat-editor"><div class="mat-row mat-head"><span>Código SAP</span><span>Descripción</span><span>Cantidad</span><span>Unidad</span><span></span></div><div class="mat-rows"></div><button type="button" class="mat-add" id="btnMatAdd">+ Agregar línea</button></div>`; break;
     case 'computed': ctl = `<div class="inp bg-slate-100 text-slate-500" id="${id}">Se calcula solo: llegada a Firplak − envío OC</div>`; break;
     default: ctl = `<input type="text" ${base} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} ${f.list ? `list="dl_${f.k}"` : ''}>${f.list ? `<datalist id="dl_${f.k}">${f.list.map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : ''}`;
   }
-  const wide = f.t === 'textarea' ? 'md:col-span-2 lg:col-span-4' : f.t === 'proveedor' ? 'md:col-span-2' : '';
+  const wide = (f.t === 'textarea' || f.t === 'materiales') ? 'md:col-span-2 lg:col-span-4' : f.t === 'proveedor' ? 'md:col-span-2' : '';
   return `<div class="${wide}"><label class="lbl" for="${id}">${esc(f.label)}${req}</label>${ctl}</div>`;
 }
 function buildForm() {
@@ -396,6 +432,8 @@ function buildForm() {
     <div><div class="sec-title"><i data-lucide="${ic}" class="w-3.5 h-3.5"></i>${esc(title)}</div>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">${FIELDS.filter(f => f.sec === s).map(inputHtml).join('')}</div></div>`).join('');
   $('in_proveedor_id').addEventListener('change', onProveedorChange);
+  $('btnMatAdd').addEventListener('click', () => $('in_materiales').querySelector('.mat-rows').insertAdjacentHTML('beforeend', matRowHtml()));
+  $('in_materiales').addEventListener('click', e => { if (e.target.closest('.mat-del')) e.target.closest('.mat-row').remove(); });
   const note = $('provFallbackNote');
   note.classList.toggle('hidden', !S.provFallback);
   note.textContent = S.provFallback ? 'Aviso: la llave actual no puede leer la tabla de proveedores (proveedores_impo). La lista de proveedores se arma desde las PO cargadas y el responsable sugerido es el de la PO más reciente de cada proveedor; revísalo antes de guardar.' : '';
@@ -414,7 +452,7 @@ function openForm(row) {
   buildForm();
   $('formErrors').classList.add('hidden');
   if (row) {
-    FIELDS.forEach(f => { const el = $('in_' + f.k); if (!el || f.t === 'computed') return; const v = row[f.k]; el.value = v === null || v === undefined ? '' : String(v); });
+    FIELDS.forEach(f => { const el = $('in_' + f.k); if (!el || f.t === 'computed') return; if (f.t === 'materiales') { matSetEditor(matList(row)); return; } const v = row[f.k]; el.value = v === null || v === undefined ? '' : String(v); });
     $('in_leadtime_real_dias').textContent = row.leadtime_real_dias == null ? 'Se calcula solo: llegada a Firplak − envío OC' : `${row.leadtime_real_dias} días (calculado)`;
     $('formTitle').textContent = `Editar PO ${row.numero_po}`;
     $('formSubtitle').textContent = `${row.proveedor} · solo se guardan los campos que cambies.`;
@@ -432,6 +470,7 @@ function readForm() {
   const o = {};
   WRITABLE.forEach(k => {
     const f = FIELDS.find(x => x.k === k), el = $('in_' + k); let v = el.value;
+    if (f.t === 'materiales') { o[k] = matReadEditor(); return; }
     if (f.t === 'bool') v = v === 'true';
     else if (f.t === 'number') v = v === '' ? null : Number(v);
     else { v = (v || '').trim(); if (v === '') v = null; }
@@ -477,7 +516,7 @@ function buildPayload(o, original) {
   const body = {};
   WRITABLE.forEach(k => {
     const a = original[k] ?? null, b = o[k] ?? null;
-    const same = (typeof b === 'number' && a !== null) ? Number(a) === b : String(a) === String(b);
+    const same = (k === 'materiales') ? JSON.stringify(a) === JSON.stringify(b) : (typeof b === 'number' && a !== null) ? Number(a) === b : String(a) === String(b);
     if (!same) body[k] = b;
   });
   if (Object.keys(body).length) body.updated_at = new Date().toISOString();

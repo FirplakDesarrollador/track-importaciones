@@ -15,3 +15,14 @@
 .ktbl th{background:#f8fafc;color:#64748b;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;padding:.5rem .6rem;border-bottom:1px solid #e2e8f0}
 .ktbl td{padding:.45rem .6rem;border-bottom:1px solid #f1f5f9}
 .ktbl td.n,.ktbl th.n{text-align:right;font-variant-numeric:tabular-nums}
+
+.mat-sum{font-size:11px;color:#475569;margin-top:2px;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mat-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.mat-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;border-bottom:1px solid #e2e8f0;padding:4px 6px}
+.mat-tbl td{border-bottom:1px solid #f1f5f9;padding:4px 6px;color:#1e293b;font-weight:500}
+.mat-tbl .num{text-align:right;white-space:nowrap}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.mat-row{display:grid;grid-template-columns:200px 1fr 110px 80px 32px;gap:6px;margin-bottom:6px;align-items:center}
+.mat-head{font-size:11px;font-weight:600;color:#475569;margin-bottom:4px}
+.mat-del{border:1px solid #fecdd3;color:#e11d48;border-radius:.5rem;height:32px;background:#fff1f2;cursor:pointer}
+.mat-add{font-size:12px;font-weight:600;color:#2563eb;border:1px dashed #93c5fd;border-radius:.75rem;padding:.4rem .8rem;background:#eff6ff;cursor:pointer}
