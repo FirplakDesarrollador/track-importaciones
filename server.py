@@ -85,11 +85,10 @@ def load_env():
     if not (url.startswith("https://") or url.startswith("http://127.0.0.1") or url.startswith("http://localhost")):
         fail("SUPABASE_URL debe empezar por https://")
     anon = cfg.get("SUPABASE_ANON_KEY", "")
-    allowed = {e.strip().lower() for e in cfg.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
-    return url, key, anon, allowed
+    return url, key, anon
 
 
-SUPABASE_URL, SUPABASE_KEY, SUPABASE_ANON_KEY, ALLOWED_EMAILS = load_env()
+SUPABASE_URL, SUPABASE_KEY, SUPABASE_ANON_KEY = load_env()
 SSL_CTX = ssl.create_default_context()
 ALLOWED_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
 
@@ -172,8 +171,6 @@ class Handler(SimpleHTTPRequestHandler):
         email = str(user.get("email") or "").lower()
         if not email:
             return 401, {"code": "AUTH", "message": "La sesión no es válida. Vuelve a iniciar sesión."}
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-            return 403, {"code": "FORBIDDEN", "message": f"El usuario {email} no tiene acceso a esta aplicación."}
         return None
 
     def _proxy(self, method):

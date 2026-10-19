@@ -53,8 +53,6 @@ async function verifyUser(req, url, anon) {
   let user; try { user = await r.json(); } catch { user = null; }
   const email = String((user && user.email) || '').toLowerCase();
   if (!email) return { error: [401, { code: 'AUTH', message: 'La sesión no es válida. Vuelve a iniciar sesión.' }] };
-  const allowed = String(process.env.ALLOWED_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
-  if (allowed.length && !allowed.includes(email)) return { error: [403, { code: 'FORBIDDEN', message: `El usuario ${email} no tiene acceso a esta aplicación.` }] };
   return { email };
 }
 

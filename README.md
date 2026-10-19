@@ -30,7 +30,7 @@ Estructura del repositorio:
 
 ### Inicio de sesión (Supabase Auth)
 
-Cada persona entra con su correo y su contraseña. La página inicia sesión con Supabase y manda el token en cada pedido a `/api`. La función revisa el token con Supabase y, si `ALLOWED_EMAILS` está configurada, que el correo esté en la lista. Si falta `SUPABASE_KEY` o `SUPABASE_ANON_KEY`, la función rechaza todo (error 503).
+Cada persona entra con su correo y su contraseña. La página inicia sesión con Supabase y manda el token en cada pedido a `/api`. La función revisa el token con Supabase: cualquier usuario válido de Supabase Auth puede entrar (no hay lista de correos), así que conviene apagar los registros públicos. Si falta `SUPABASE_KEY` o `SUPABASE_ANON_KEY`, la función rechaza todo (error 503).
 
 **1. Crear los usuarios en Supabase**
 1. Supabase Dashboard → **Authentication → Users → Add user → Create new user**.
@@ -44,14 +44,13 @@ Cada persona entra con su correo y su contraseña. La página inicia sesión con
 - `SUPABASE_URL` = `https://ahcrtxmlotzagtwwyvny.supabase.co`
 - `SUPABASE_KEY` = la llave con permiso de escritura (hoy la `service_role`, idealmente ya rotada). Nunca llega al navegador.
 - `SUPABASE_ANON_KEY` = la llave `anon` / `publishable` (Supabase → Project Settings → API Keys). Es pública por diseño; la página la usa solo para iniciar sesión.
-- `ALLOWED_EMAILS` = `catalina.white@firplak.com,laura.buitrago@firplak.com,john.salazar@firplak.com`
-- Borra `APP_PASSWORD` (ya no se usa).
+- Si existe `ALLOWED_EMAILS` o `APP_PASSWORD`, bórralas (ya no se usan).
 
 **3. Configuración del proyecto en Vercel:** Framework Preset **Other**; Build Command, Output Directory e Install Command vacíos (se toman de `vercel.json`).
 
 **4.** Ve a **Deployments** y dale **Redeploy** (las variables solo aplican en despliegues nuevos). Al abrir el enlace, el dashboard pide correo y contraseña; arriba a la derecha aparece el correo y el botón **Cerrar sesión**.
 
-**Modo local:** si pones `SUPABASE_ANON_KEY=` (y opcionalmente `ALLOWED_EMAILS=`) en el `.env`, `server.py` también pide iniciar sesión. Si no la pones, queda abierto como antes (solo para uso en tu computador).
+**Modo local:** si pones `SUPABASE_ANON_KEY=` en el `.env`, `server.py` también pide iniciar sesión. Si no la pones, queda abierto como antes (solo para uso en tu computador).
 
 **Siguiente paso de seguridad:** hoy el servidor escribe con la `service_role`. Lo ideal es activar permisos por filas (RLS) para usuarios autenticados y dejar de usar la `service_role`.
 
