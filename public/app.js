@@ -110,7 +110,7 @@ async function submitLogin(ev) {
   loadAll();
 }
 async function logout() {
-  if (SB) await SB.auth.signOut().catch(() => {});
+  if (SB) await SB.auth.signOut({ scope: 'local' }).catch(() => {});
   S.rows = []; loaded = false;
   showLogin('');
 }
@@ -149,12 +149,12 @@ async function api(path, opts = {}) {
   let data = null; const txt = await r.text();
   try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
   if (r.status === 401 && data && data.code === 'AUTH') {
-    if (SB) await SB.auth.signOut().catch(() => {});
+    if (SB) await SB.auth.signOut({ scope: 'local' }).catch(() => {});
     showLogin(data.message || 'Vuelve a iniciar sesión.');
     const e = new Error('Se requiere iniciar sesión.'); e.status = 401; e.auth = true; throw e;
   }
   if (r.status === 403 && data && data.code === 'FORBIDDEN') {
-    if (SB) await SB.auth.signOut().catch(() => {});
+    if (SB) await SB.auth.signOut({ scope: 'local' }).catch(() => {});
     showLogin(data.message);
     const e = new Error(data.message); e.status = 403; e.auth = true; throw e;
   }
