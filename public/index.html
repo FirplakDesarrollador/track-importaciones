@@ -181,6 +181,9 @@
                         <p class="text-xs text-slate-500 mt-0.5">Proveedor: <strong id="dProveedor" class="text-slate-700"></strong> | País: <strong id="dPais" class="text-slate-700"></strong></p>
                     </div>
                 </div>
+                <button id="btnSplitPo" class="btn-split" title="Crear un envío parcial de esta PO">
+                    <i data-lucide="split" class="w-4 h-4"></i> Dividir en parcial
+                </button>
                 <button id="btnEditPo" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-sm flex items-center gap-2">
                     <i data-lucide="pencil" class="w-4 h-4"></i> Editar PO
                 </button>
@@ -249,6 +252,20 @@
         <div class="px-5 py-4 bg-slate-50 flex justify-end gap-3">
             <button id="modalConfirmNo" class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl">Volver a corregir</button>
             <button id="modalConfirmYes" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-bold">Guardar de todos modos</button>
+        </div>
+    </div>
+</div>
+
+<div id="modalSplit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
+            <i data-lucide="split" class="w-5 h-5 text-indigo-600"></i>
+            <h3 class="font-bold text-base text-slate-900" id="splitTitle">Dividir en parcial</h3>
+        </div>
+        <div class="p-5 text-sm text-slate-700 space-y-4 split-body" id="splitBody"></div>
+        <div class="px-5 py-4 bg-slate-50 flex justify-end gap-3">
+            <button id="splitCancel" class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl">Cancelar</button>
+            <button id="splitOk" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-sm">Crear parcial</button>
         </div>
     </div>
 </div>

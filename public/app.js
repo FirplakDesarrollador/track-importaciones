@@ -546,6 +546,107 @@ async function saveForm() {
   } finally { btn.disabled = false; btn.classList.remove('opacity-60'); }
 }
 
+
+// ------------------------------------------------------------------ dividir en parcial
+// Convención: "N" → se renombra a "N-1" y se crea "N-2"; "N-k" → se crea "N-(máx+1)".
+// Nombres no estándar ("1866-1876 ENVIO 2"): base = texto antes del primer "-" si es numérico; el nombre se sugiere y es editable.
+function splitNames(src) {
+  const po = src.numero_po.trim(), all = new Set(S.rows.map(r => r.numero_po.trim().toLowerCase()));
+  const maxK = base => Math.max(0, ...S.rows.map(r => (r.numero_po.trim().match(new RegExp('^' + base + '-(\\d+)$')) || [])[1]).filter(Boolean).map(Number));
+  let m;
+  if ((m = po.match(/^(\d+)$/))) {
+    const k = maxK(m[1]);
+    if (k === 0) return { base: m[1], rename: `${m[1]}-1`, nuevo: `${m[1]}-2`, std: true };
+    return { base: m[1], rename: null, nuevo: `${m[1]}-${k + 1}`, std: false };
+  }
+  if ((m = po.match(/^(\d+)-(\d+)$/))) return { base: m[1], rename: null, nuevo: `${m[1]}-${maxK(m[1]) + 1}`, std: true };
+  const head = po.split('-')[0].trim();
+  if (/^\d+$/.test(head)) return { base: head, rename: null, nuevo: `${head}-${Math.max(2, maxK(head) + 1)}`, std: false };
+  let n = 2, sug; do { sug = `${po} parcial ${n++}`; } while (all.has(sug.toLowerCase()));
+  return { base: po, rename: null, nuevo: sug, std: false };
+}
+function openSplit() {
+  const r = S.current; if (!r) return;
+  const nm = splitNames(r), mats = matList(r);
+  $('splitTitle').textContent = `Dividir en parcial · PO ${r.numero_po}`;
+  $('splitBody').innerHTML = `
+    ${nm.std ? '' : `<div class="split-note">El nombre <b>${esc(r.numero_po)}</b> no sigue el formato N o N-k. Revisa el nombre sugerido para el nuevo parcial.</div>`}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><label class="lbl" for="spRename">Esta PO quedará como</label><input class="inp" id="spRename" value="${esc(nm.rename || r.numero_po)}"></div>
+      <div><label class="lbl" for="spNuevo">Nuevo parcial <span class="text-rose-500">*</span></label><input class="inp" id="spNuevo" value="${esc(nm.nuevo)}"></div>
+    </div>
+    <p class="text-xs text-slate-500">El nuevo parcial copia proveedor, responsable, prioridad, condición de pago, fecha de envío OC y ETA según OC. Queda «En producción», sin datos de embarque ni anticipos, y el <b>valor PO vacío</b> (el valor es de la OC completa; queda la nota «Parcial de ${esc(nm.base)}»).</p>
+    <div><div class="sec-title"><i data-lucide="package" class="w-3.5 h-3.5"></i>Materiales que pasan al nuevo parcial</div>
+    ${mats.length ? `<table class="mat-tbl"><thead><tr><th>Código SAP</th><th>Descripción</th><th class="num">En esta PO</th><th class="num">Pasan al parcial</th></tr></thead><tbody>${
+      mats.map((x, i) => `<tr><td class="mono">${esc(x.codigo || '—')}</td><td>${esc(x.descripcion || '')}</td><td class="num">${fnum(x.cantidad, 3)}${x.unidad ? ' ' + esc(x.unidad) : ''}</td>
+        <td class="num"><input class="inp split-q" type="number" min="0" step="any" data-i="${i}" value="0"></td></tr>`).join('')}</tbody></table>
+      <div class="mt-2 flex gap-3"><button type="button" class="mat-add" id="spAll">Pasar todo</button><button type="button" class="mat-add" id="spNone">Nada</button></div>`
+    : '<span class="text-slate-400">Esta PO no tiene materiales registrados; el parcial se crea sin materiales.</span>'}</div>
+    <div id="splitErr" class="hidden form-err"></div>`;
+  if (mats.length) {
+    $('spAll').onclick = () => document.querySelectorAll('.split-q').forEach(el => el.value = mats[el.dataset.i].cantidad ?? 0);
+    $('spNone').onclick = () => document.querySelectorAll('.split-q').forEach(el => el.value = 0);
+  }
+  $('modalSplit').classList.remove('hidden'); icons();
+  $('splitCancel').onclick = () => $('modalSplit').classList.add('hidden');
+  $('splitOk').onclick = () => doSplit(r, nm);
+}
+// Calcula el resultado (exportada para pruebas): { errs, origen, parcial }
+function splitPlan(r, nm, rename, nuevo, qtys) {
+  const errs = [], taken = new Set(S.rows.filter(x => x.id !== r.id).map(x => x.numero_po.trim().toLowerCase()));
+  if (!nuevo) errs.push('Escribe el nombre del nuevo parcial.');
+  if (!rename) errs.push('El nombre de esta PO no puede quedar vacío.');
+  if (nuevo && taken.has(nuevo.toLowerCase())) errs.push(`Ya existe la PO ${nuevo}.`);
+  if (rename && rename.toLowerCase() !== r.numero_po.trim().toLowerCase() && taken.has(rename.toLowerCase())) errs.push(`Ya existe la PO ${rename}.`);
+  if (nuevo && rename && nuevo.toLowerCase() === rename.toLowerCase()) errs.push('Los dos nombres deben ser distintos.');
+  const mats = matList(r), quedan = [], pasan = [];
+  mats.forEach((x, i) => {
+    const q = qtys[i] ?? 0, tot = Number(x.cantidad) || 0;
+    if (isNaN(q) || q < 0) errs.push(`Línea ${x.codigo || i + 1}: cantidad no válida.`);
+    else if (q > tot) errs.push(`Línea ${x.codigo || i + 1}: no puedes pasar ${q}, solo hay ${tot}.`);
+    else {
+      if (q > 0) pasan.push({ ...x, cantidad: q });
+      const rest = Math.round((tot - q) * 1000) / 1000;
+      if (rest > 0) quedan.push({ ...x, cantidad: rest });
+    }
+  });
+  const parcial = {
+    proveedor_id: r.proveedor_id, responsable_id: r.responsable_id || null, prioridad: r.prioridad || 'Normal',
+    condicion_pago: r.condicion_pago || null, fecha_envio_oc: r.fecha_envio_oc || null, eta_segun_oc: r.eta_segun_oc || null,
+    numero_po: nuevo, estado_eta: 'En producción', factura_radicada: false,
+    observaciones: `Parcial de ${nm.base}`, materiales: pasan.length ? pasan : null,
+  };
+  Object.keys(parcial).forEach(k => parcial[k] === null && delete parcial[k]);
+  const origen = {};
+  if (rename !== r.numero_po) origen.numero_po = rename;
+  if (mats.length && JSON.stringify(quedan) !== JSON.stringify(mats)) origen.materiales = quedan.length ? quedan : null;
+  if (Object.keys(origen).length) origen.updated_at = new Date().toISOString();
+  return { errs, origen, parcial };
+}
+async function doSplit(r, nm) {
+  const qtys = [...document.querySelectorAll('.split-q')].map(el => el.value === '' ? 0 : Number(el.value));
+  const plan = splitPlan(r, nm, $('spRename').value.trim(), $('spNuevo').value.trim(), qtys);
+  const box = $('splitErr');
+  if (plan.errs.length) { box.innerHTML = '<ul class="list-disc pl-5">' + plan.errs.map(e => `<li>${esc(e)}</li>`).join('') + '</ul>'; box.classList.remove('hidden'); return; }
+  const btn = $('splitOk'); btn.disabled = true; btn.classList.add('opacity-60');
+  let created = null;
+  try {
+    const out = await api('importaciones', { method: 'POST', body: plan.parcial });   // 1) crear el parcial
+    created = Array.isArray(out) && out[0] ? out[0] : null;
+    if (Object.keys(plan.origen).length) {                                             // 2) ajustar la PO de origen
+      const upd = await api('importaciones?id=eq.' + encodeURIComponent(r.id), { method: 'PATCH', body: plan.origen });
+      if (Array.isArray(upd) && !upd.length) throw new Error('No se actualizó la PO de origen (¿permisos?).');
+    }
+    $('modalSplit').classList.add('hidden');
+    toast(`Parcial ${plan.parcial.numero_po} creado${plan.origen.numero_po ? ` y la PO quedó como ${plan.origen.numero_po}` : ''}.`);
+    await loadAll();
+    if (created) openDetail(created.id);
+  } catch (e) {
+    box.innerHTML = (created ? `<strong>Se creó el parcial ${esc(plan.parcial.numero_po)}, pero no se pudo ajustar la PO de origen:</strong> ` : '<strong>No se pudo crear el parcial:</strong> ') + esc(friendlyError(e));
+    box.classList.remove('hidden'); if (created) loadAll();
+  } finally { btn.disabled = false; btn.classList.remove('opacity-60'); }
+}
+
 // ------------------------------------------------------------------ KPI
 function aggregate(rows, keyFn) {
   const m = new Map();
@@ -637,6 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('tblVencidas').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
   $('btnBackList').addEventListener('click', () => showTab('list'));
   $('btnEditPo').addEventListener('click', () => S.current && openForm(S.current));
+  $('btnSplitPo').addEventListener('click', openSplit);
   $('btnSaveForm').addEventListener('click', saveForm);
   $('btnCancelForm').addEventListener('click', () => { const back = S.editing ? 'detail' : 'list'; S.editing = null; $('navFormLabel').textContent = 'Nueva PO'; showTab(back); });
   $('loginForm').addEventListener('submit', submitLogin);
