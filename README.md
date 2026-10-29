@@ -80,7 +80,7 @@ npx tailwindcss@3.4.16 -c tailwind.config.js -i tailwind.input.css -o public/tai
 ## Qué hace
 
 - **Importaciones:** muestra las PO activas, es decir, todas menos las Terminadas y Canceladas. Una casilla deja ver también las cerradas. Se puede filtrar por responsable, proveedor, prioridad y estado, y buscar por texto. Las vencidas salen arriba, en rojo.
-- **Detalle PO:** muestra los 30 campos de la lista de SharePoint, en el mismo orden, y la línea de tiempo de los 8 hitos, con los días entre cada uno. Avisa si hay fechas fuera de orden.
+- **Detalle PO:** muestra los 30 campos de la lista de SharePoint, en el mismo orden, y la línea de tiempo de los 9 hitos (incluye la fecha de levante, campo nuevo que no existe en la lista de SharePoint), con los días entre cada uno. Avisa si hay fechas fuera de orden.
 - **Nueva PO / Editar:**
   - Las listas desplegables son las mismas que acepta la base.
   - Al escoger el proveedor se llena el responsable, y se puede cambiar.

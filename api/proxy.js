@@ -16,7 +16,7 @@ const WRITABLE_COLS = new Set([
   'eta_segun_oc', 'eta_estimada_fpk', 'estado_eta', 'condicion_pago', 'valor_po',
   'anticipo1_fecha_pago', 'anticipo2_momento', 'anticipo2_fecha_pago', 'factura_radicada',
   'embarcador', 'tipo_carga', 'cant_bultos', 'peso_kg', 'volumen_m3',
-  'fecha_bodega_origen', 'fecha_embarque', 'fecha_llegada_puerto', 'fecha_pago_impuestos',
+  'fecha_bodega_origen', 'fecha_embarque', 'fecha_llegada_puerto', 'fecha_pago_impuestos', 'fecha_levante',
   'fecha_salida_puerto', 'fecha_llegada_firplak', 'fecha_liquidacion', 'fecha_traslado',
   'consolidada_con', 'observaciones', 'materiales', 'updated_at',
 ]);

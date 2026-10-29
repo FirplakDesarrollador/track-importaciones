@@ -35,3 +35,6 @@
 .form-err{background:#fff1f2;border:1px solid #fecdd3;color:#be123c;border-radius:.75rem;padding:.6rem .8rem;font-size:13px}
 .max-w-3xl{max-width:48rem}
 .space-y-4>:not([hidden])~:not([hidden]){margin-top:1rem}
+
+/* Línea de tiempo con 9 hitos (incluye levante): 9 columnas en pantallas grandes */
+@media (min-width: 1024px) { .stepper-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); } }

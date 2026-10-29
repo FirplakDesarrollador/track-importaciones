@@ -35,6 +35,7 @@ const FIELDS = [
   { k: 'fecha_embarque', sp: 'Fecha_Embarque', label: 'Fecha embarque', t: 'date', sec: 'hitos', hito: 'Embarque' },
   { k: 'fecha_llegada_puerto', sp: 'Fecha_Llegada_Puerto', label: 'Fecha llegada a puerto', t: 'date', sec: 'hitos', hito: 'Llegada a puerto' },
   { k: 'fecha_pago_impuestos', sp: 'Fecha_Pago_Impuestos', label: 'Fecha pago de impuestos', t: 'date', sec: 'hitos', hito: 'Pago de impuestos' },
+  { k: 'fecha_levante', sp: 'Fecha_Levante', label: 'Fecha levante', t: 'date', sec: 'hitos', hito: 'Levante' },
   { k: 'fecha_salida_puerto', sp: 'Fecha_Salida_Puerto', label: 'Fecha salida de puerto', t: 'date', sec: 'hitos', hito: 'Salida de puerto' },
   { k: 'fecha_llegada_firplak', sp: 'Fecha_Llegada_Firplak', label: 'Fecha llegada a Firplak', t: 'date', sec: 'hitos', hito: 'Llegada a Firplak' },
   { k: 'fecha_liquidacion', sp: 'Fecha_Liquidacion', label: 'Fecha liquidación', t: 'date', sec: 'hitos', hito: 'Liquidación' },
@@ -401,7 +402,7 @@ function renderStepper(r) {
         : `<span class="text-slate-400 italic">${isNext ? 'Por registrar' : 'En espera'}</span>`}
       </div></div>`;
   }).join('');
-  $('stepper').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">${cards}</div>`;
+  $('stepper').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 stepper-9 gap-3">${cards}</div>`;
   const w = orderWarnings(r);
   $('stepperWarn').classList.toggle('hidden', !w.length);
   $('stepperWarn').innerHTML = w.length ? '<strong>Fechas fuera de orden:</strong> ' + w.map(esc).join(' ') : '';
