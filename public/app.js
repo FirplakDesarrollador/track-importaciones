@@ -39,6 +39,7 @@ const FIELDS = [
   { k: 'fecha_levante', sp: 'Fecha_Levante', label: 'Fecha levante', t: 'date', sec: 'hitos', hito: 'Levante' },
   { k: 'fecha_salida_puerto', sp: 'Fecha_Salida_Puerto', label: 'Fecha salida de puerto', t: 'date', sec: 'hitos', hito: 'Salida de puerto' },
   { k: 'fecha_llegada_firplak', sp: 'Fecha_Llegada_Firplak', label: 'Fecha llegada a Firplak', t: 'date', sec: 'hitos', hito: 'Llegada a Firplak' },
+  { k: 'fecha_entrega_conteo', sp: 'Fecha_Entrega_Conteo', label: 'Fecha entrega conteo', t: 'date', sec: 'hitos', hito: 'Entrega conteo' },
   { k: 'fecha_liquidacion', sp: 'Fecha_Liquidacion', label: 'Fecha liquidación', t: 'date', sec: 'hitos', hito: 'Liquidación' },
   { k: 'fecha_traslado', sp: 'Fecha_Traslado', label: 'Fecha traslado', t: 'date', sec: 'hitos', hito: 'Traslado' },
   { k: 'consolidada_con', sp: 'Consolidada_Con', label: 'Consolidada con', t: 'text', sec: 'otros', ph: 'Otras PO del mismo embarque' },
@@ -49,10 +50,10 @@ const FIELDS = [
 const HITOS = FIELDS.filter(f => f.hito);
 // Fechas que guardan su fuente en <campo>_fuente (manual, correo:<id>, aduanimex:<archivo>…) y quedan en importaciones_historial
 const CON_FUENTE = [...HITOS.map(h => h.k), 'anticipo1_fecha_pago', 'anticipo2_fecha_pago', 'factura_radicada_fecha'];
-const fuenteTxt = f => !f ? '' : f === 'manual' ? 'Registro manual' : f.startsWith('correo:') ? 'Correo' : f.startsWith('aduanimex:') ? 'Reporte Aduanimex' : f;
+const fuenteTxt = f => !f ? '' : f === 'manual' ? 'Registro manual' : f.startsWith('correo:') ? 'Correo' : f.startsWith('aduanimex:') ? 'Reporte Aduanimex' : f === 'regla_liquidacion' ? 'Regla: igual a la liquidación' : f === 'regla_llegada+1habil' ? 'Regla: día hábil siguiente a la llegada' : f;
 
 // ------------------------------------------------------------------ pagos: hitos paralelos (parte B)
-// Corren al lado de la línea logística; no cambian el estado ni el orden de los 9 hitos.
+// Corren al lado de la línea logística; no cambian el estado ni el orden de los 10 hitos.
 function pagosDe(r) {
   const emb = !!r.fecha_embarque;
   const a2Esperado = r.anticipo2_momento === 'Despacho' || r.anticipo2_momento === 'Contra BL';
@@ -109,7 +110,8 @@ const UMBRALES_ESTANCAMIENTO = {
     fecha_pago_impuestos: 2,    // Pago de impuestos → Levante. P90 1 d (muestra de 14 PO).
     fecha_levante: 5,           // Levante → Salida de puerto. P90 4 d (muestra de 13 PO).
     fecha_salida_puerto: 3,     // Salida de puerto → Llegada a Firplak. P90 3 d.
-    fecha_llegada_firplak: 10,  // Llegada a Firplak → Liquidación. P90 10 d.
+    fecha_llegada_firplak: 10,  // Llegada a Firplak → Entrega conteo. Sin historia aún: se usa el P90 de llegada → liquidación (10 d).
+    fecha_entrega_conteo: 10,   // Entrega conteo → Liquidación. Sin historia aún (campo nuevo del 10/11/2026); revisar con datos.
     fecha_liquidacion: 2,       // Liquidación → Traslado. Casi siempre el mismo día; máximo 4 d.
     fecha_traslado: null,       // Último hito: no alerta.
   },
@@ -120,7 +122,7 @@ const UMBRALES_ESTANCAMIENTO = {
 const AEREO = ['Air', 'Express'];
 function ultimoHito(r) { let u = null; HITOS.forEach((h, i) => { if (r[h.k]) u = { i, h, fecha: r[h.k] }; }); return u; }
 // El estado sale de las fechas. El valor manual (estado_eta) solo se usa como respaldo:
-// Cancelada, Terminada sin traslado registrado, y En conteo / En liquidación tras la llegada (no hay fecha que los separe).
+// Cancelada y Terminada sin traslado registrado. La entrega de conteo separa En conteo de En liquidación.
 function estadoPor(r) {
   const m = r.estado_eta, u = ultimoHito(r), k = u ? u.h.k : null;
   if (m === 'Cancelada') return 'Cancelada';
@@ -129,7 +131,8 @@ function estadoPor(r) {
     case null: case 'fecha_bodega_origen': return 'En producción';
     case 'fecha_embarque': case 'fecha_salida_puerto': return 'En tránsito';
     case 'fecha_llegada_puerto': case 'fecha_pago_impuestos': case 'fecha_levante': return 'En aduana';
-    case 'fecha_llegada_firplak': return m === 'En liquidación' ? 'En liquidación' : 'En conteo';
+    case 'fecha_llegada_firplak': return 'En conteo';
+    case 'fecha_entrega_conteo': return 'En liquidación';
     case 'fecha_liquidacion': return 'En liquidación';
   }
   return m || 'En producción';
@@ -534,7 +537,7 @@ function renderStepper(r) {
         : `<span class="text-slate-400 italic">${isNext ? 'Por registrar' : 'En espera'}</span>`}
       </div></div>`;
   }).join('');
-  $('stepper').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 stepper-9 gap-3">${cards}</div>`;
+  $('stepper').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 stepper-10 gap-3">${cards}</div>`;
   const w = orderWarnings(r);
   $('stepperWarn').classList.toggle('hidden', !w.length);
   $('stepperWarn').innerHTML = w.length ? '<strong>Fechas fuera de orden:</strong> ' + w.map(esc).join(' ') : '';
@@ -659,6 +662,8 @@ function buildPayload(o, original) {
 }
 async function saveForm() {
   const o = readForm();
+  // Regla de traslado (la aplica también la base, trigger a_trg_importaciones_traslado): si hay liquidación y no traslado, queda Terminada.
+  if (o.fecha_liquidacion && !o.fecha_traslado && o.estado_eta !== 'Cancelada') o.estado_eta = 'Terminada';
   if (!['Cancelada', 'Terminada'].includes(o.estado_eta)) o.estado_eta = estadoPor(o);   // el estado sale de las fechas
   const { errs, warns } = validate(o);
   const box = $('formErrors');

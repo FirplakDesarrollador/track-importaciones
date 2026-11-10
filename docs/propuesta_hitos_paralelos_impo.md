@@ -4,7 +4,7 @@ Aprobado por Catalina el 10/11/2026. Migración: `supabase/migrations/20261110_h
 
 ## Qué cambia
 
-**1. Pagos como hitos paralelos.** Anticipo 1, anticipo 2 y factura radicada se muestran al lado de la línea logística de 9 hitos. No cambian el estado ni el orden de esos hitos.
+**1. Pagos como hitos paralelos.** Anticipo 1, anticipo 2 y factura radicada se muestran al lado de la línea logística de 10 hitos. No cambian el estado ni el orden de esos hitos.
 - Columnas que ya existían: `anticipo1_fecha_pago`, `anticipo2_momento`, `anticipo2_fecha_pago` y `factura_radicada`.
 - Columna nueva: `factura_radicada_fecha`.
 - Estados que muestra la app:
@@ -54,3 +54,11 @@ En `/workspace/comex/backups/`:
 - `schema_importaciones_pre_hitos_paralelos_20261110_1610.json`
 
 La migración solo agrega columnas. Los únicos `drop ... if exists` son de las políticas y el trigger que ella misma crea, para poder correrla de nuevo sin error.
+
+## Actualización 10/11/2026: entrega conteo y regla de traslado
+Decisiones de Catalina:
+- **Traslado = liquidación.** Si no hay liquidación, el día hábil colombiano siguiente a la llegada a Firplak (sin fines de semana ni festivos). Lo aplica la base con el trigger `a_trg_importaciones_traslado`, que marca la fuente (`regla_liquidacion` o `regla_llegada+1habil`) y nunca pisa un traslado escrito a mano. El caso "llegada + 1 hábil" solo se aplica cuando la PO se marca Terminada sin liquidación, para no cerrar las PO apenas llegan.
+- **Fecha entrega conteo** (manual), con su `_fuente`, entre llegada a Firplak y liquidación. Llegada sin conteo = En conteo; conteo sin liquidación = En liquidación.
+- **factura_radicada_fecha**: sin completar hacia atrás por ahora.
+
+Migración: `supabase/migrations/20261110_entrega_conteo_traslado_impo.sql` (columnas, tabla `festivos_co` 2025–2027, función `siguiente_dia_habil_co`, trigger, historial y vista).

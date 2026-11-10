@@ -80,7 +80,7 @@ npx tailwindcss@3.4.16 -c tailwind.config.js -i tailwind.input.css -o public/tai
 ## Qué hace
 
 - **Importaciones:** muestra las PO activas, es decir, todas menos las Terminadas y Canceladas. Una casilla deja ver también las cerradas. Se puede filtrar por responsable, proveedor, prioridad y estado, y buscar por texto. Las vencidas salen arriba, en rojo.
-- **Detalle PO:** muestra los 30 campos de la lista de SharePoint, en el mismo orden, y la línea de tiempo de los 9 hitos (incluye la fecha de levante, campo nuevo que no existe en la lista de SharePoint), con los días entre cada uno. Avisa si hay fechas fuera de orden.
+- **Detalle PO:** muestra los 30 campos de la lista de SharePoint, en el mismo orden, y la línea de tiempo de los 10 hitos (incluye la fecha de levante y la fecha de entrega conteo, campos nuevos que no existen en la lista de SharePoint), con los días entre cada uno. Avisa si hay fechas fuera de orden.
 - **Nueva PO / Editar:**
   - Las listas desplegables son las mismas que acepta la base.
   - Al escoger el proveedor se llena el responsable, y se puede cambiar.
@@ -101,3 +101,8 @@ npx tailwindcss@3.4.16 -c tailwind.config.js -i tailwind.input.css -o public/tai
 - **Atrasada:** la PO supera el límite de días del tramo en que va (`UMBRALES_ESTANCAMIENTO`, P90 histórico aprobado el 10/11/2026). El tránsito marítimo tiene 45 d y el aéreo o express 5 d.
 - **Sin actualizar:** 60 días o más sin hitos nuevos ni ediciones.
 - **Vencida:** la PO está activa, sin llegada a Firplak y con la ETA (FPK u OC) ya pasada.
+
+## Fecha de entrega conteo y regla de traslado (10/11/2026)
+- **Fecha entrega conteo** (`fecha_entrega_conteo`, manual): va entre llegada a Firplak y liquidación. Llegada sin conteo = En conteo; conteo sin liquidación = En liquidación.
+- **Fecha traslado**: la llena la base (trigger `a_trg_importaciones_traslado`) cuando está vacía: igual a la liquidación (`regla_liquidacion`); si no hay liquidación y la PO se marca Terminada, el día hábil siguiente a la llegada a Firplak sin fines de semana ni festivos (`regla_llegada+1habil`, tabla `festivos_co`, cargada 2025–2027). Un traslado escrito a mano nunca se sobrescribe.
+- Migración: `supabase/migrations/20261110_entrega_conteo_traslado_impo.sql`.

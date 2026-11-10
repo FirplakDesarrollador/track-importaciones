@@ -20,7 +20,7 @@ const WRITABLE_COLS = new Set([
   'fecha_bodega_origen', 'fecha_embarque', 'fecha_llegada_puerto', 'fecha_pago_impuestos', 'fecha_levante',
   'fecha_salida_puerto', 'fecha_llegada_firplak', 'fecha_liquidacion', 'fecha_traslado',
   'consolidada_con', 'observaciones', 'materiales', 'updated_at', 'factura_radicada_fecha',
-  'fecha_bodega_origen_fuente', 'fecha_embarque_fuente', 'fecha_llegada_puerto_fuente', 'fecha_pago_impuestos_fuente', 'fecha_levante_fuente', 'fecha_salida_puerto_fuente', 'fecha_llegada_firplak_fuente', 'fecha_liquidacion_fuente', 'fecha_traslado_fuente', 'anticipo1_fecha_pago_fuente', 'anticipo2_fecha_pago_fuente', 'factura_radicada_fecha_fuente',
+  'fecha_bodega_origen_fuente', 'fecha_embarque_fuente', 'fecha_llegada_puerto_fuente', 'fecha_pago_impuestos_fuente', 'fecha_levante_fuente', 'fecha_salida_puerto_fuente', 'fecha_llegada_firplak_fuente', 'fecha_liquidacion_fuente', 'fecha_traslado_fuente', 'anticipo1_fecha_pago_fuente', 'anticipo2_fecha_pago_fuente', 'factura_radicada_fecha_fuente', 'fecha_entrega_conteo', 'fecha_entrega_conteo_fuente',
 ]);
 const MAX_BODY = 256 * 1024;
 
