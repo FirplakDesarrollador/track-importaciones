@@ -26,6 +26,7 @@ const FIELDS = [
   { k: 'anticipo2_momento', sp: 'Anticipo2_Momento', label: 'Anticipo 2 · momento', t: 'select', opts: ANTICIPO2, blank: true, sec: 'pago' },
   { k: 'anticipo2_fecha_pago', sp: 'Anticipo2_FechaPago', label: 'Anticipo 2 · fecha de pago', t: 'date', sec: 'pago' },
   { k: 'factura_radicada', sp: 'Factura_Radicada', label: 'Factura radicada', t: 'bool', sec: 'pago' },
+  { k: 'factura_radicada_fecha', sp: 'Factura_Radicada_Fecha', label: 'Factura radicada · fecha', t: 'date', sec: 'pago' },
   { k: 'embarcador', sp: 'Embarcador', label: 'Embarcador', t: 'text', list: EMBARCADOR_SUG, sec: 'carga' },
   { k: 'tipo_carga', sp: 'Tipo_Carga', label: 'Tipo de carga', t: 'select', opts: TIPOS_CARGA, blank: true, sec: 'carga' },
   { k: 'cant_bultos', sp: 'Can_Bultos', label: 'Cantidad de bultos', t: 'text', sec: 'carga', ph: 'Ej: 48 bultos, 3 pallets' },
@@ -46,6 +47,55 @@ const FIELDS = [
   { k: 'materiales', sp: 'Materiales OC', label: 'Materiales de la OC', t: 'materiales', sec: 'mat' },
 ];
 const HITOS = FIELDS.filter(f => f.hito);
+// Fechas que guardan su fuente en <campo>_fuente (manual, correo:<id>, aduanimex:<archivo>…) y quedan en importaciones_historial
+const CON_FUENTE = [...HITOS.map(h => h.k), 'anticipo1_fecha_pago', 'anticipo2_fecha_pago', 'factura_radicada_fecha'];
+const fuenteTxt = f => !f ? '' : f === 'manual' ? 'Registro manual' : f.startsWith('correo:') ? 'Correo' : f.startsWith('aduanimex:') ? 'Reporte Aduanimex' : f;
+
+// ------------------------------------------------------------------ pagos: hitos paralelos (parte B)
+// Corren al lado de la línea logística; no cambian el estado ni el orden de los 9 hitos.
+function pagosDe(r) {
+  const emb = !!r.fecha_embarque;
+  const a2Esperado = r.anticipo2_momento === 'Despacho' || r.anticipo2_momento === 'Contra BL';
+  return [
+    { k: 'anticipo1_fecha_pago', nombre: 'Anticipo 1', corto: 'A1', fecha: r.anticipo1_fecha_pago, fuente: r.anticipo1_fecha_pago_fuente,
+      estado: r.anticipo1_fecha_pago ? 'hecho' : 'pendiente', nota: r.condicion_pago ? 'Condición: ' + r.condicion_pago : '' },
+    { k: 'anticipo2_fecha_pago', nombre: 'Anticipo 2', corto: 'A2', fecha: r.anticipo2_fecha_pago, fuente: r.anticipo2_fecha_pago_fuente,
+      estado: r.anticipo2_fecha_pago ? 'hecho' : (a2Esperado && emb ? 'revisar' : r.anticipo2_momento ? 'pendiente' : 'na'),
+      nota: r.anticipo2_momento ? 'Momento: ' + r.anticipo2_momento : 'Sin segundo anticipo definido' },
+    { k: 'factura_radicada_fecha', nombre: 'Factura radicada', corto: 'F', fecha: r.factura_radicada_fecha, fuente: r.factura_radicada_fecha_fuente,
+      estado: r.factura_radicada ? 'hecho' : (r.fecha_llegada_firplak ? 'revisar' : 'pendiente'), nota: r.factura_radicada && !r.factura_radicada_fecha ? 'Radicada (sin fecha registrada)' : '' },
+  ];
+}
+const PAGO_TXT = { hecho: 'Hecho', pendiente: 'Pendiente', revisar: 'Revisar', na: 'No aplica' };
+const PAGO_CLS = { hecho: 'bg-emerald-50 text-emerald-800 border-emerald-200', pendiente: 'bg-slate-50 text-slate-700 border-slate-200',
+  revisar: 'bg-amber-50 text-amber-800 border-amber-200', na: 'bg-white text-slate-600 border-slate-200' };
+function pagosMini(r) {
+  return `<div class="mt-1 flex flex-wrap gap-1">${pagosDe(r).filter(p => p.estado !== 'na').map(p =>
+    `<span class="px-1.5 py-0.5 rounded border text-[11px] font-semibold ${PAGO_CLS[p.estado]}" title="${esc(p.nombre)}: ${PAGO_TXT[p.estado]}${p.fecha ? ' · ' + fdate(p.fecha) : ''}">${p.corto} ${p.estado === 'hecho' ? '✓' : p.estado === 'revisar' ? '!' : '·'}</span>`).join('')}</div>`;
+}
+function renderPagos(r) {
+  $('pagos').innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-3">${pagosDe(r).map(p => `
+    <div class="p-3 rounded-xl border ${PAGO_CLS[p.estado]}">
+      <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-slate-900">${esc(p.nombre)}</h4><span class="text-xs font-semibold">${PAGO_TXT[p.estado]}</span></div>
+      <div class="mt-1 text-sm text-slate-800">${p.fecha ? fdate(p.fecha) : 'Sin fecha'}</div>
+      ${p.nota ? `<div class="text-xs text-slate-600 mt-0.5">${esc(p.nota)}</div>` : ''}
+      ${p.estado === 'revisar' ? `<div class="text-xs text-amber-800 mt-0.5">${p.k === 'factura_radicada_fecha' ? 'La mercancía ya llegó y la factura no figura radicada.' : 'Ya embarcó y no hay fecha de este pago.'}</div>` : ''}
+      ${p.fuente ? `<div class="text-xs text-slate-600 mt-0.5">Fuente: ${esc(fuenteTxt(p.fuente))}</div>` : ''}
+    </div>`).join('')}</div>`;
+}
+const CAMPO_NOMBRE = k => (FIELDS.find(f => f.k === k) || { label: k }).label;
+async function renderHistorial(r) {
+  const box = $('historial'); box.innerHTML = '<p class="text-sm text-slate-600" role="status">Cargando historial…</p>';
+  let h = [];
+  try { h = await api('importaciones_historial?select=campo,valor_anterior,valor_nuevo,fuente,registrado_por,registrado_at&importacion_id=eq.' + encodeURIComponent(r.id) + '&order=registrado_at.desc&limit=50'); }
+  catch (e) { if (S.current && S.current.id === r.id) box.innerHTML = '<p class="text-sm text-slate-600">No pude leer el historial: ' + esc(friendlyError(e)) + '</p>'; return; }
+  if (!S.current || S.current.id !== r.id) return;
+  const fv = v => v == null ? '—' : /^\d{4}-\d{2}-\d{2}$/.test(v) ? fdate(v) : v === 'true' ? 'Sí' : v === 'false' ? 'No' : esc(v);
+  box.innerHTML = (h || []).length ? `<div class="overflow-x-auto"><table class="ktbl"><thead><tr><th>Cuándo</th><th>Hito o pago</th><th>Antes</th><th>Ahora</th><th>Fuente</th><th>Quién</th></tr></thead><tbody>${h.map(x => `<tr>
+      <td class="whitespace-nowrap">${esc(new Date(x.registrado_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}</td>
+      <td>${esc(CAMPO_NOMBRE(x.campo))}</td><td>${fv(x.valor_anterior)}</td><td class="font-semibold">${fv(x.valor_nuevo)}</td><td>${esc(fuenteTxt(x.fuente))}</td><td>${esc(x.registrado_por || '—')}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="text-sm text-slate-600">Todavía no hay cambios registrados. El historial empezó el 10/11/2026: desde entonces queda cada fecha que se registra o corrige, con su fuente.</p>';
+}
 
 // ------------------------------------------------------------------ estado calculado y alertas por tramo (parte A)
 // Días máximos esperando el siguiente hito, según el último hito registrado.
@@ -397,7 +447,7 @@ function renderList() {
       <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[110px] max-w-[160px] break-words">${r._venc ? '<span class="text-rose-600 text-[11px]" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}<div class="mt-1 font-normal">${badgePrio(r.prioridad)}</div></td>
       <td class="px-3 py-2.5 min-w-[180px] max-w-[260px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-500">${esc(r.pais || '')}</div>${matSummary(r)}</td>
       <td class="px-3 py-2.5 text-slate-700">${esc(r.responsable || '—')}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r._estado)}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r._estado)}${CERRADOS.includes(r._estado) ? '' : pagosMini(r)}</td>
       <td class="px-3 py-2.5 text-xs">${hitoActualHtml(r)}</td>
       <td class="px-3 py-2.5 whitespace-nowrap text-slate-700"><div title="ETA estimada FPK">${fdate(r.eta_estimada_fpk)}</div><div class="text-[11px] text-slate-600" title="ETA según OC">OC ${fdate(r.eta_segun_oc)}</div></td>
       <td class="px-3 py-2.5 text-slate-600"><div>${esc(r.embarcador || '—')}</div>${r.tipo_carga ? `<span class="px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-semibold text-slate-600">${esc(r.tipo_carga)}</span>` : ''}</td>
@@ -439,7 +489,7 @@ function renderDetail() {
     <div class="text-xl font-extrabold text-slate-900">${lt == null ? '—' : lt + ' d'}</div>
     <div class="text-[11px] ${r.llego_a_tiempo === true ? 'text-emerald-700' : r.llego_a_tiempo === false ? 'text-rose-700' : 'text-slate-400'} font-semibold">
       ${r.llego_a_tiempo === true ? `A tiempo vs ETA OC (${r.dias_vs_eta_oc} d)` : r.llego_a_tiempo === false ? `Tarde vs ETA OC (+${r.dias_vs_eta_oc} d)` : 'Sin llegada a Firplak'}</div>`;
-  renderStepper(r);
+  renderStepper(r); renderPagos(r); renderHistorial(r);
   $('detailFields').innerHTML = FIELDS.map((f, i) => `
     <div class="fld ${f.k === 'observaciones' || f.k === 'materiales' ? 'sm:col-span-2 lg:col-span-3' : ''}">
       <div class="k">${i + 1}. ${esc(f.label)} <span class="text-slate-300">· ${esc(f.sp)}</span></div>
@@ -480,7 +530,7 @@ function renderStepper(r) {
         <h4 class="text-xs font-bold text-slate-800 leading-snug">${esc(h.hito)}</h4>
       </div>
       <div class="mt-3 pt-2 border-t border-slate-200/60 text-[11px]">
-        ${done ? `<div class="text-slate-700 font-medium">${fdate(v)}</div><div class="text-[10px] ${gap < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${gap === null ? '' : (i === 0 ? 'desde OC: ' : '') + (gap >= 0 ? '+' : '') + gap + ' d'}</div>`
+        ${done ? `<div class="text-slate-700 font-medium">${fdate(v)}</div>${r[h.k + '_fuente'] && r[h.k + '_fuente'] !== 'manual' ? `<div class="text-[11px] text-slate-600">${esc(fuenteTxt(r[h.k + '_fuente']))}</div>` : ''}<div class="text-[10px] ${gap < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${gap === null ? '' : (i === 0 ? 'desde OC: ' : '') + (gap >= 0 ? '+' : '') + gap + ' d'}</div>`
         : `<span class="text-slate-400 italic">${isNext ? 'Por registrar' : 'En espera'}</span>`}
       </div></div>`;
   }).join('');
@@ -594,6 +644,7 @@ function confirmWarnings(warns) {
 function buildPayload(o, original) {
   if (!original) {
     const body = {}; Object.entries(o).forEach(([k, v]) => { if (v !== null) body[k] = v; });
+    CON_FUENTE.forEach(k => { if (body[k]) body[k + '_fuente'] = 'manual'; });
     return body;
   }
   const body = {};
@@ -602,6 +653,7 @@ function buildPayload(o, original) {
     const same = (k === 'materiales') ? JSON.stringify(a) === JSON.stringify(b) : (typeof b === 'number' && a !== null) ? Number(a) === b : String(a) === String(b);
     if (!same) body[k] = b;
   });
+  CON_FUENTE.forEach(k => { if (k in body) body[k + '_fuente'] = body[k] ? 'manual' : null; });
   if (Object.keys(body).length) body.updated_at = new Date().toISOString();
   return body;
 }
