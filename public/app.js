@@ -46,6 +46,62 @@ const FIELDS = [
   { k: 'materiales', sp: 'Materiales OC', label: 'Materiales de la OC', t: 'materiales', sec: 'mat' },
 ];
 const HITOS = FIELDS.filter(f => f.hito);
+
+// ------------------------------------------------------------------ estado calculado y alertas por tramo (parte A)
+// Días máximos esperando el siguiente hito, según el último hito registrado.
+// P90 histórico de las PO que ya cerraron cada tramo (cálculo del 10/11/2026), aprobado por Catalina.
+const UMBRALES_ESTANCAMIENTO = {
+  diasPorTramo: {
+    envio_oc: 70,               // Envío OC → Bodega origen (producción del proveedor). Mediana 29 d, P90 71 d.
+    fecha_bodega_origen: 18,    // Bodega origen → Embarque. Mediana 8 d, P90 18 d.
+    fecha_embarque: { maritimo: 45, aereo: 5 }, // Embarque → Llegada a puerto. LCL/FCL P90 44 d; Air/Express P90 2 d.
+    fecha_llegada_puerto: 19,   // Llegada a puerto → Pago de impuestos. Mediana 7 d, P90 19 d.
+    fecha_pago_impuestos: 2,    // Pago de impuestos → Levante. P90 1 d (muestra de 14 PO).
+    fecha_levante: 5,           // Levante → Salida de puerto. P90 4 d (muestra de 13 PO).
+    fecha_salida_puerto: 3,     // Salida de puerto → Llegada a Firplak. P90 3 d.
+    fecha_llegada_firplak: 10,  // Llegada a Firplak → Liquidación. P90 10 d.
+    fecha_liquidacion: 2,       // Liquidación → Traslado. Casi siempre el mismo día; máximo 4 d.
+    fecha_traslado: null,       // Último hito: no alerta.
+  },
+  // Pasado este límite sin hitos nuevos y sin ediciones, lo más probable es que la PO ya avanzó
+  // y el tracker no se actualizó: se muestra aparte, en gris, como "Sin actualizar".
+  diasSinActualizar: 60,
+};
+const AEREO = ['Air', 'Express'];
+function ultimoHito(r) { let u = null; HITOS.forEach((h, i) => { if (r[h.k]) u = { i, h, fecha: r[h.k] }; }); return u; }
+// El estado sale de las fechas. El valor manual (estado_eta) solo se usa como respaldo:
+// Cancelada, Terminada sin traslado registrado, y En conteo / En liquidación tras la llegada (no hay fecha que los separe).
+function estadoPor(r) {
+  const m = r.estado_eta, u = ultimoHito(r), k = u ? u.h.k : null;
+  if (m === 'Cancelada') return 'Cancelada';
+  if (k === 'fecha_traslado' || m === 'Terminada') return 'Terminada';
+  switch (k) {
+    case null: case 'fecha_bodega_origen': return 'En producción';
+    case 'fecha_embarque': case 'fecha_salida_puerto': return 'En tránsito';
+    case 'fecha_llegada_puerto': case 'fecha_pago_impuestos': case 'fecha_levante': return 'En aduana';
+    case 'fecha_llegada_firplak': return m === 'En liquidación' ? 'En liquidación' : 'En conteo';
+    case 'fecha_liquidacion': return 'En liquidación';
+  }
+  return m || 'En producción';
+}
+const etaRef = r => r.eta_estimada_fpk || r.eta_segun_oc || null;
+const vencidaPor = r => !CERRADOS.includes(estadoPor(r)) && !r.fecha_llegada_firplak && !!etaRef(r) && etaRef(r) < todayBog();
+function evaluarEstancamiento(r) {
+  if (CERRADOS.includes(estadoPor(r))) return { nivel: 'cerrada' };
+  const u = ultimoHito(r), desde = u ? u.fecha : r.fecha_envio_oc, sig = u ? HITOS[u.i + 1] : HITOS[0];
+  if (!desde) return { nivel: 'sin_fecha', sig, u };
+  const dias = ddiff(todayBog(), desde);
+  let umbral = UMBRALES_ESTANCAMIENTO.diasPorTramo[u ? u.h.k : 'envio_oc'];
+  if (umbral && typeof umbral === 'object') umbral = AEREO.includes(r.tipo_carga) ? umbral.aereo : umbral.maritimo;
+  const base = { dias, umbral, sig, u };
+  if (umbral == null || dias <= umbral) return { ...base, nivel: 'ok' };
+  const lim = UMBRALES_ESTANCAMIENTO.diasSinActualizar;
+  const edit = r.updated_at ? ddiff(todayBog(), String(r.updated_at).slice(0, 10)) : dias;
+  if (dias >= lim && edit >= lim) return { ...base, nivel: 'sin_actualizar' };
+  return { ...base, nivel: 'atrasada' };
+}
+// Número para ordenar: el primer número de la PO (1829 en "1829-1853 PARCIAL 2"); el resto desempata.
+const poNum = r => { const m = String(r.numero_po || '').match(/\d+/); return m ? Number(m[0]) : 0; };
 const WRITABLE = FIELDS.filter(f => f.t !== 'computed').map(f => f.k);
 const SECTIONS = [
   ['po', 'Datos de la PO', 'file-text'], ['pago', 'Pago', 'wallet'], ['carga', 'Carga', 'boxes'],
@@ -230,8 +286,8 @@ function diasVsEta(r) {
     return d <= 0 ? `<span class="text-emerald-700 font-semibold" title="Llegó vs ETA según OC">${d === 0 ? 'En fecha' : d + ' d'} ✓</span>`
       : `<span class="text-rose-700 font-semibold" title="Llegó vs ETA según OC">+${d} d tarde</span>`;
   }
-  if (CERRADOS.includes(r.estado_eta)) return '<span class="text-slate-400">—</span>';
-  const ref = r.eta_estimada_fpk || r.eta_segun_oc;
+  if (CERRADOS.includes(estadoPor(r))) return '<span class="text-slate-500">—</span>';
+  const ref = etaRef(r);
   if (!ref) return '<span class="text-slate-400">Sin ETA</span>';
   const d = ddiff(todayBog(), ref);
   return d > 0 ? `<span class="inline-flex px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold">+${d} d vencida</span>`
@@ -246,7 +302,7 @@ async function loadAll() {
       api('v_importaciones_metricas?select=*&order=numero_po.asc'),
       api('responsables?select=id,nombre,activo&order=nombre.asc'),
     ]);
-    S.rows = rows || [];
+    S.rows = (rows || []).map(r => ({ ...r, _estado: estadoPor(r), _venc: vencidaPor(r), _est: evaluarEstancamiento(r) }));
     S.responsables = (resp || []).filter(r => r.activo !== false);
     let prov = [];
     try { prov = await api('proveedores_impo?select=id,nombre,pais,responsable_id,respaldo_id,frecuencia,activo&order=nombre.asc'); } catch { prov = []; }
@@ -284,45 +340,70 @@ function fillFilters() {
   fillSelect($('fResponsable'), S.responsables.map(r => [r.id, r.nombre]), 'Todos los Responsables');
   fillSelect($('fProveedor'), S.proveedores.map(p => [p.id, p.nombre]), 'Todos los Proveedores');
   fillSelect($('fPrioridad'), PRIORIDADES.map(p => [p, p]), 'Todas las Prioridades');
-  fillSelect($('fEstado'), ESTADOS.map(p => [p, p]), 'Todos los Estados');
+  fillSelect($('fEstado'), ESTADOS.map(p => [p, p]), 'Todos los estados');
 }
 
 function renderStats() {
-  const act = S.rows.filter(r => !CERRADOS.includes(r.estado_eta));
+  const act = S.rows.filter(r => !CERRADOS.includes(r._estado));
   $('statTotal').textContent = S.rows.length;
   $('statActivas').textContent = act.length;
-  $('statTerminadas').textContent = S.rows.filter(r => r.estado_eta === 'Terminada').length;
-  $('statVencidas').textContent = S.rows.filter(r => r.vencida).length;
+  $('statTerminadas').textContent = S.rows.filter(r => r._estado === 'Terminada').length;
+  $('statVencidas').textContent = S.rows.filter(r => r._venc).length;
+  $('statAtrasadas').textContent = S.rows.filter(r => r._est.nivel === 'atrasada').length;
 }
 
 // ------------------------------------------------------------------ lista
+function badgeEstanc(ev) {
+  if (ev.nivel === 'atrasada') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-amber-50 text-amber-800 border-amber-200 text-[11px] font-bold whitespace-nowrap" title="Atrasada: supera el límite de ${ev.umbral} días para este tramo">${ev.dias} d · límite ${ev.umbral}</span>`;
+  if (ev.nivel === 'sin_actualizar') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-slate-100 text-slate-600 border-slate-200 text-[11px] font-semibold whitespace-nowrap" title="Sin hitos ni ediciones hace ${ev.dias} días: probablemente ya avanzó. Actualiza las fechas.">Sin actualizar · ${ev.dias} d</span>`;
+  if (ev.nivel === 'ok') return `<span class="text-slate-600 text-[11px] whitespace-nowrap">${ev.dias} d${ev.umbral != null ? ' de ' + ev.umbral : ''}</span>`;
+  return '';
+}
+function hitoActualHtml(r) {
+  const ev = r._est;
+  if (ev.nivel === 'cerrada') return '<span class="text-slate-500">—</span>';
+  const u = ev.u;
+  return `<div class="text-slate-800 font-medium whitespace-nowrap">${u ? esc(u.h.hito) : 'Sin hitos'}</div>
+    <div class="text-[11px] text-slate-600 whitespace-nowrap">${u ? fdate(u.fecha) : (r.fecha_envio_oc ? 'OC ' + fdate(r.fecha_envio_oc) : '')}${ev.sig ? ' → ' + esc(ev.sig.hito) : ''}</div>
+    <div class="mt-0.5">${badgeEstanc(ev)}</div>`;
+}
+const NIVEL_ORDEN = { atrasada: 0, sin_actualizar: 2, ok: 3, sin_fecha: 3, cerrada: 4 };
+function sortRows(rows, modo) {
+  const ref = r => etaRef(r) || '9999';
+  const num = (a, b) => (poNum(b) - poNum(a)) || String(b.numero_po).localeCompare(String(a.numero_po), 'es', { numeric: true });
+  if (modo === 'eta') return rows.sort((a, b) => ref(a).localeCompare(ref(b)) || num(a, b));
+  if (modo === 'reciente') return rows.sort(num);
+  // Atención: vencidas, luego atrasadas (más días sobre el límite primero), luego sin actualizar, luego por ETA
+  const exceso = r => r._est.umbral != null && r._est.dias != null ? r._est.dias - r._est.umbral : 0;
+  return rows.sort((a, b) => (b._venc - a._venc) || (NIVEL_ORDEN[a._est.nivel] - NIVEL_ORDEN[b._est.nivel]) || (exceso(b) - exceso(a)) || ref(a).localeCompare(ref(b)) || num(a, b));
+}
+function clearFilters() {
+  ['fSearch', 'fResponsable', 'fProveedor', 'fPrioridad', 'fEstado'].forEach(id => { $(id).value = ''; });
+  ['fTodas', 'fSoloVencidas', 'fSoloAtrasadas'].forEach(id => { $(id).checked = false; });
+  renderList();
+}
 function renderList() {
   const q = $('fSearch').value.trim().toLowerCase();
   const fr = $('fResponsable').value, fp = $('fProveedor').value, fpr = $('fPrioridad').value, fe = $('fEstado').value;
-  const todas = $('fTodas').checked || CERRADOS.includes(fe), soloV = $('fSoloVencidas').checked;
+  const todas = $('fTodas').checked || CERRADOS.includes(fe), soloV = $('fSoloVencidas').checked, soloA = $('fSoloAtrasadas').checked;
   const rows = S.rows.filter(r =>
-    (todas || !CERRADOS.includes(r.estado_eta)) && (!fr || r.responsable_id === fr) && (!fp || r.proveedor_id === fp) &&
-    (!fpr || r.prioridad === fpr) && (!fe || r.estado_eta === fe) && (!soloV || r.vencida) &&
+    (todas || !CERRADOS.includes(r._estado)) && (!fr || r.responsable_id === fr) && (!fp || r.proveedor_id === fp) &&
+    (!fpr || r.prioridad === fpr) && (!fe || r._estado === fe) && (!soloV || r._venc) && (!soloA || r._est.nivel === 'atrasada') &&
     (!q || [r.numero_po, r.proveedor, r.embarcador, r.observaciones, r.consolidada_con, matText(r)].some(x => (x || '').toLowerCase().includes(q))));
-  // Orden: vencidas primero, luego por ETA (estimada FPK o según OC), sin ETA al final
-  const ref = r => r.eta_estimada_fpk || r.eta_segun_oc || '9999';
-  rows.sort((a, b) => (b.vencida - a.vencida) || ref(a).localeCompare(ref(b)) || a.numero_po.localeCompare(b.numero_po));
+  sortRows(rows, $('fOrden').value);
   $('listCount').textContent = `${rows.length} PO mostradas`;
   $('listBody').innerHTML = rows.length ? rows.map(r => `
-    <tr class="hover:bg-slate-50 cursor-pointer ${r.vencida ? 'row-vencida' : ''}" data-id="${esc(r.id)}">
-      <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[120px] max-w-[180px] break-words">${r.vencida ? '<span class="text-rose-600 text-[11px]" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}</td>
-      <td class="px-3 py-2.5 min-w-[200px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-400">${esc(r.pais || '')}</div>${matSummary(r)}</td>
-      <td class="px-3 py-2.5">${badgePrio(r.prioridad)}</td>
+    <tr class="hover:bg-slate-50 cursor-pointer ${r._venc ? 'row-vencida' : ''}" data-id="${esc(r.id)}">
+      <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[110px] max-w-[160px] break-words">${r._venc ? '<span class="text-rose-600 text-[11px]" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}<div class="mt-1 font-normal">${badgePrio(r.prioridad)}</div></td>
+      <td class="px-3 py-2.5 min-w-[180px] max-w-[260px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-500">${esc(r.pais || '')}</div>${matSummary(r)}</td>
       <td class="px-3 py-2.5 text-slate-700">${esc(r.responsable || '—')}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r.estado_eta)}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap text-slate-700">${fdate(r.eta_segun_oc)}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap text-slate-700">${fdate(r.eta_estimada_fpk)}</td>
-      <td class="px-3 py-2.5 text-slate-600">${esc(r.embarcador || '—')}</td>
-      <td class="px-3 py-2.5">${r.tipo_carga ? `<span class="px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-semibold text-slate-600">${esc(r.tipo_carga)}</span>` : '—'}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r._estado)}</td>
+      <td class="px-3 py-2.5 text-xs">${hitoActualHtml(r)}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap text-slate-700"><div title="ETA estimada FPK">${fdate(r.eta_estimada_fpk)}</div><div class="text-[11px] text-slate-600" title="ETA según OC">OC ${fdate(r.eta_segun_oc)}</div></td>
+      <td class="px-3 py-2.5 text-slate-600"><div>${esc(r.embarcador || '—')}</div>${r.tipo_carga ? `<span class="px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-semibold text-slate-600">${esc(r.tipo_carga)}</span>` : ''}</td>
       <td class="px-3 py-2.5 whitespace-nowrap text-xs">${diasVsEta(r)}</td>
-      <td class="px-3 py-2.5 text-right"><span class="text-blue-600 font-semibold text-xs whitespace-nowrap">Ver ›</span></td>
     </tr>`).join('')
-    : `<tr><td colspan="11" class="px-4 py-10 text-center text-slate-400">No hay PO con esos filtros.</td></tr>`;
+    : `<tr><td colspan="8" class="px-4 py-10 text-center text-slate-600">No hay PO con esos filtros. <button type="button" class="ml-2 text-blue-700 font-semibold underline" data-clear>Limpiar filtros</button></td></tr>`;
 }
 
 // ------------------------------------------------------------------ detalle
@@ -349,8 +430,9 @@ function renderDetail() {
   $('detailEmpty').classList.toggle('hidden', !!r); $('detailContent').classList.toggle('hidden', !r);
   if (!r) return;
   $('dPo').textContent = r.numero_po; $('dProveedor').textContent = r.proveedor; $('dPais').textContent = r.pais || '—';
-  $('dEstado').innerHTML = badgeEstado(r.estado_eta); $('dPrioridad').innerHTML = badgePrio(r.prioridad);
-  $('dVencida').innerHTML = r.vencida ? badgeVencida() : '';
+  $('dEstado').innerHTML = badgeEstado(r._estado) + (r.estado_eta && r.estado_eta !== r._estado ? ` <span class="text-[11px] text-slate-600" title="El estado se calcula con las fechas; el valor manual queda como respaldo">(manual: ${esc(r.estado_eta)})</span>` : '');
+  $('dPrioridad').innerHTML = badgePrio(r.prioridad);
+  $('dVencida').innerHTML = (r._venc ? badgeVencida() : '') + ' ' + badgeEstanc(r._est);
   const lt = r.leadtime_real_dias;
   $('dLeadBadge').innerHTML = `
     <div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Leadtime real</div>
@@ -378,7 +460,7 @@ function orderWarnings(obj) {
 function renderStepper(r) {
   const filled = HITOS.map(h => !!r[h.k]);
   const last = filled.lastIndexOf(true);
-  const closed = CERRADOS.includes(r.estado_eta);
+  const closed = CERRADOS.includes(estadoPor(r));
   const nextIdx = closed ? -1 : filled.indexOf(false, Math.max(0, last));
   let prevDate = r.fecha_envio_oc;
   const cards = HITOS.map((h, i) => {
@@ -524,7 +606,9 @@ function buildPayload(o, original) {
   return body;
 }
 async function saveForm() {
-  const o = readForm(); const { errs, warns } = validate(o);
+  const o = readForm();
+  if (!['Cancelada', 'Terminada'].includes(o.estado_eta)) o.estado_eta = estadoPor(o);   // el estado sale de las fechas
+  const { errs, warns } = validate(o);
   const box = $('formErrors');
   if (errs.length) { box.innerHTML = '<strong>Corrige antes de guardar:</strong><ul class="list-disc pl-5 mt-1">' + errs.map(e => `<li>${esc(e)}</li>`).join('') + '</ul>'; box.classList.remove('hidden'); return; }
   box.classList.add('hidden');
@@ -702,7 +786,7 @@ function svgBarsH(list) {
 function renderKpi() {
   const R = S.rows;
   const all = aggregate(R, () => 'Total')[0] || { n: 0, ok: 0, pct: null, ltAvg: null };
-  const venc = R.filter(r => r.vencida), act = R.filter(r => !CERRADOS.includes(r.estado_eta));
+  const venc = R.filter(r => r._venc), act = R.filter(r => !CERRADOS.includes(r._estado));
   const card = (t, v, sub, cls, ic) => `<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><div class="flex items-center justify-between"><span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">${t}</span><i data-lucide="${ic}" class="w-4 h-4 ${cls}"></i></div><div class="text-3xl font-extrabold mt-1 ${cls}">${v}</div><div class="text-xs text-slate-500 mt-1">${sub}</div></div>`;
   $('kpiCards').innerHTML =
     card('Cumplimiento vs ETA OC', all.pct === null ? '—' : all.pct.toLocaleString('es-CO') + ' %', `${all.ok} a tiempo de ${all.n} PO llegadas`, pctCls(all.pct), 'target') +
@@ -713,10 +797,10 @@ function renderKpi() {
   $('chartMonth').innerHTML = svgMonth(byMonth);
   $('tblMonth').innerHTML = kpiTable(byMonth, 'Mes de llegada', k => esc(fmes(k)));
   const byProv = aggregate(R, r => r.proveedor).sort((a, b) => (b.n - a.n) || a.key.localeCompare(b.key));
-  $('chartProv').innerHTML = svgBarsH(byProv);
+  $('chartProv').innerHTML = svgBarsH(byProv) || '<p class="text-sm text-slate-600">Todavía no hay PO llegadas para comparar proveedores.</p>';
   $('tblProv').innerHTML = kpiTable(byProv.filter(a => a.n > 0), 'Proveedor') + (byProv.some(a => !a.n) ? `<p class="text-[11px] text-slate-400 mt-2">Sin llegadas aún: ${byProv.filter(a => !a.n).map(a => esc(a.key)).join(', ')}.</p>` : '');
   $('tblResp').innerHTML = kpiTable(aggregate(R, r => r.responsable || 'Sin asignar').sort((a, b) => a.key.localeCompare(b.key)), 'Responsable');
-  $('tblVencidas').innerHTML = venc.length ? `<table class="ktbl"><thead><tr><th># PO</th><th>Proveedor</th><th>Responsable</th><th>Estado</th><th class="n">ETA ref.</th><th class="n">Días</th></tr></thead><tbody>${venc.sort((a, b) => (a.eta_estimada_fpk || a.eta_segun_oc).localeCompare(b.eta_estimada_fpk || b.eta_segun_oc)).map(r => { const ref = r.eta_estimada_fpk || r.eta_segun_oc; return `<tr class="cursor-pointer hover:bg-rose-50" data-id="${esc(r.id)}"><td class="font-bold">${esc(r.numero_po)}</td><td>${esc(r.proveedor)}</td><td>${esc(r.responsable || '—')}</td><td>${esc(r.estado_eta)}</td><td class="n">${fdate(ref)}</td><td class="n text-rose-700 font-bold">+${ddiff(todayBog(), ref)}</td></tr>`; }).join('')}</tbody></table>` : '<p class="text-sm text-slate-400">No hay PO vencidas.</p>';
+  $('tblVencidas').innerHTML = venc.length ? `<table class="ktbl"><thead><tr><th># PO</th><th>Proveedor</th><th>Responsable</th><th>Estado</th><th class="n">ETA ref.</th><th class="n">Días</th></tr></thead><tbody>${venc.sort((a, b) => (a.eta_estimada_fpk || a.eta_segun_oc).localeCompare(b.eta_estimada_fpk || b.eta_segun_oc)).map(r => { const ref = r.eta_estimada_fpk || r.eta_segun_oc; return `<tr class="cursor-pointer hover:bg-rose-50" data-id="${esc(r.id)}"><td class="font-bold">${esc(r.numero_po)}</td><td>${esc(r.proveedor)}</td><td>${esc(r.responsable || '—')}</td><td>${esc(r._estado)}</td><td class="n">${fdate(ref)}</td><td class="n text-rose-700 font-bold">+${ddiff(todayBog(), ref)}</td></tr>`; }).join('')}</tbody></table>` : '<p class="text-sm text-slate-400">No hay PO vencidas.</p>';
   icons();
 }
 
@@ -733,10 +817,11 @@ document.addEventListener('DOMContentLoaded', () => {
     showTab(b.dataset.tab);
   }));
   ['fSearch'].forEach(id => $(id).addEventListener('input', renderList));
-  ['fResponsable', 'fProveedor', 'fPrioridad', 'fEstado', 'fTodas', 'fSoloVencidas'].forEach(id => $(id).addEventListener('change', renderList));
+  ['fResponsable', 'fProveedor', 'fPrioridad', 'fEstado', 'fTodas', 'fSoloVencidas', 'fSoloAtrasadas', 'fOrden'].forEach(id => $(id).addEventListener('change', renderList));
   $('btnReload').addEventListener('click', loadAll); $('btnRetry').addEventListener('click', () => (AUTH_REQUIRED && !SB) ? initAuth() : loadAll());
-  $('listBody').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
+  $('listBody').addEventListener('click', e => { if (e.target.closest('[data-clear]')) { clearFilters(); return; } const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
   $('tblVencidas').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
+  $('btnDetailToList').addEventListener('click', () => showTab('list'));
   $('btnBackList').addEventListener('click', () => showTab('list'));
   $('btnEditPo').addEventListener('click', () => S.current && openForm(S.current));
   $('btnSplitPo').addEventListener('click', openSplit);

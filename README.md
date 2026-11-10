@@ -94,3 +94,10 @@ npx tailwindcss@3.4.16 -c tailwind.config.js -i tailwind.input.css -o public/tai
   - Se muestran por mes de llegada, por proveedor y por responsable, junto con la lista de PO vencidas.
 
 **Vencida**, según la vista de la base, es una PO activa cuya ETA estimada FPK ya pasó. Si no tiene ETA estimada FPK, se usa la ETA según OC.
+
+## Estado calculado y alertas por tramo
+
+- **Estado:** se calcula con las fechas de los hitos (`estadoPor` en `public/app.js`). El valor manual `estado_eta` solo queda como respaldo para Cancelada, para Terminada sin traslado y para elegir entre En conteo y En liquidación después de la llegada. Al guardar, `estado_eta` se actualiza con el estado calculado.
+- **Atrasada:** la PO supera el límite de días del tramo en que va (`UMBRALES_ESTANCAMIENTO`, P90 histórico aprobado el 10/11/2026). El tránsito marítimo tiene 45 d y el aéreo o express 5 d.
+- **Sin actualizar:** 60 días o más sin hitos nuevos ni ediciones.
+- **Vencida:** la PO está activa, sin llegada a Firplak y con la ETA (FPK u OC) ya pasada.

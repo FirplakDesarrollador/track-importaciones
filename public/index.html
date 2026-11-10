@@ -60,8 +60,11 @@
                 <div class="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-semibold">
                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>Terminadas:</span><span id="statTerminadas" class="font-bold">0</span>
                 </div>
-                <div class="flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-bold">
+                <div class="flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-bold" title="Activas con la ETA ya pasada y sin llegada a Firplak">
                     <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i><span>Vencidas:</span><span id="statVencidas">0</span>
+                </div>
+                <div class="flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg font-bold" title="Activas que superan el límite de días del tramo en que van">
+                    <i data-lucide="clock" class="w-3.5 h-3.5"></i><span>Atrasadas:</span><span id="statAtrasadas">0</span>
                 </div>
             </div>
             <div class="flex items-center gap-3">
@@ -111,6 +114,12 @@
                     <label class="flex items-center gap-2 cursor-pointer font-semibold text-rose-700">
                         <input type="checkbox" id="fSoloVencidas" class="rounded"> Solo vencidas
                     </label>
+                    <label class="flex items-center gap-2 cursor-pointer font-semibold text-amber-800">
+                        <input type="checkbox" id="fSoloAtrasadas" class="rounded"> Solo atrasadas
+                    </label>
+                    <label class="flex items-center gap-2 font-semibold text-slate-700">Ordenar
+                        <select id="fOrden" class="inp py-1 w-auto"><option value="atencion">Primero lo que necesita acción</option><option value="eta">Por ETA más cercana</option><option value="reciente">Por # PO, más nueva primero</option></select>
+                    </label>
                     <span class="text-slate-500" id="listCount"></span>
                 </div>
                 <button id="btnReload" class="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium">
@@ -123,17 +132,14 @@
                 <table class="w-full text-left text-xs sm:text-sm">
                     <thead class="bg-slate-50/80 text-slate-500 uppercase text-[11px] font-bold tracking-wider border-b border-slate-200">
                         <tr>
-                            <th class="px-3 py-3"># PO</th>
+                            <th class="px-3 py-3"># PO · prioridad</th>
                             <th class="px-3 py-3">Proveedor</th>
-                            <th class="px-3 py-3">Prioridad</th>
                             <th class="px-3 py-3">Responsable</th>
-                            <th class="px-3 py-3">Estado</th>
-                            <th class="px-3 py-3">ETA según OC</th>
-                            <th class="px-3 py-3">ETA estimada FPK</th>
+                            <th class="px-3 py-3" title="Se calcula con las fechas de los hitos">Estado</th>
+                            <th class="px-3 py-3" title="Último hito registrado, el siguiente y los días que lleva en ese tramo">Hito actual</th>
+                            <th class="px-3 py-3" title="Arriba: ETA estimada FPK. Abajo: ETA según OC">ETA</th>
                             <th class="px-3 py-3">Embarcador</th>
-                            <th class="px-3 py-3">Tipo carga</th>
                             <th class="px-3 py-3" title="Activas: días frente a la ETA estimada FPK (o la ETA según OC si no hay). Llegadas: días de la llegada a Firplak frente a la ETA según OC.">Días vs ETA</th>
-                            <th class="px-3 py-3 text-right">Acción</th>
                         </tr>
                     </thead>
                     <tbody id="listBody" class="divide-y divide-slate-100"></tbody>
@@ -167,7 +173,8 @@
     <!-- ====================== DETALLE ====================== -->
     <section id="tab-detail" class="tab-panel hidden space-y-5">
         <div id="detailEmpty" class="bg-white p-10 rounded-2xl border border-slate-200 shadow-sm text-center text-slate-500 text-sm">
-            Selecciona una PO en la lista para ver su detalle.
+            <p>Todavía no has abierto ninguna PO.</p>
+            <button id="btnDetailToList" type="button" class="mt-3 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">Ir a la lista de importaciones</button>
         </div>
         <div id="detailContent" class="hidden space-y-5">
             <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
