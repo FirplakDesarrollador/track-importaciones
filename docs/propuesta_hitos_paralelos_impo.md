@@ -59,6 +59,6 @@ La migración solo agrega columnas. Los únicos `drop ... if exists` son de las 
 Decisiones de Catalina:
 - **Traslado = liquidación.** Si no hay liquidación, el día hábil colombiano siguiente a la llegada a Firplak (sin fines de semana ni festivos). Lo aplica la base con el trigger `a_trg_importaciones_traslado`, que marca la fuente (`regla_liquidacion` o `regla_llegada+1habil`) y nunca pisa un traslado escrito a mano. El caso "llegada + 1 hábil" solo se aplica cuando la PO se marca Terminada sin liquidación, para no cerrar las PO apenas llegan.
 - **Fecha entrega conteo** (manual), con su `_fuente`, entre llegada a Firplak y liquidación. Llegada sin conteo = En conteo; conteo sin liquidación = En liquidación.
-- **factura_radicada_fecha**: sin completar hacia atrás por ahora.
+- **factura_radicada_fecha**: se completó el 10/11/2026 desde la app de contabilidad (export Radicados_Importacion_2026-11-10.csv) para 56 PO con coincidencia clara (IMP + proveedor + valor ±1 %), fuente `appcontabilidad:<consecutivo>`; la fecha es la de creación del radicado en hora Bogotá. Los casos dudosos quedaron para Catalina. Una fecha de radicación cuenta como factura radicada en la app aunque la casilla siga en No.
 
 Migración: `supabase/migrations/20261110_entrega_conteo_traslado_impo.sql` (columnas, tabla `festivos_co` 2025–2027, función `siguiente_dia_habil_co`, trigger, historial y vista).

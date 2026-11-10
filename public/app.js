@@ -50,7 +50,7 @@ const FIELDS = [
 const HITOS = FIELDS.filter(f => f.hito);
 // Fechas que guardan su fuente en <campo>_fuente (manual, correo:<id>, aduanimex:<archivo>…) y quedan en importaciones_historial
 const CON_FUENTE = [...HITOS.map(h => h.k), 'anticipo1_fecha_pago', 'anticipo2_fecha_pago', 'factura_radicada_fecha'];
-const fuenteTxt = f => !f ? '' : f === 'manual' ? 'Registro manual' : f.startsWith('correo:') ? 'Correo' : f.startsWith('aduanimex:') ? 'Reporte Aduanimex' : f === 'regla_liquidacion' ? 'Regla: igual a la liquidación' : f === 'regla_llegada+1habil' ? 'Regla: día hábil siguiente a la llegada' : f;
+const fuenteTxt = f => !f ? '' : f === 'manual' ? 'Registro manual' : f.startsWith('correo:') ? 'Correo' : f.startsWith('aduanimex:') ? 'Reporte Aduanimex' : f.startsWith('appcontabilidad:') ? 'App de contabilidad (radicado ' + f.slice(16) + ')' : f === 'regla_liquidacion' ? 'Regla: igual a la liquidación' : f === 'regla_llegada+1habil' ? 'Regla: día hábil siguiente a la llegada' : f;
 
 // ------------------------------------------------------------------ pagos: hitos paralelos (parte B)
 // Corren al lado de la línea logística; no cambian el estado ni el orden de los 10 hitos.
@@ -64,7 +64,8 @@ function pagosDe(r) {
       estado: r.anticipo2_fecha_pago ? 'hecho' : (a2Esperado && emb ? 'revisar' : r.anticipo2_momento ? 'pendiente' : 'na'),
       nota: r.anticipo2_momento ? 'Momento: ' + r.anticipo2_momento : 'Sin segundo anticipo definido' },
     { k: 'factura_radicada_fecha', nombre: 'Factura radicada', corto: 'F', fecha: r.factura_radicada_fecha, fuente: r.factura_radicada_fecha_fuente,
-      estado: r.factura_radicada ? 'hecho' : (r.fecha_llegada_firplak ? 'revisar' : 'pendiente'), nota: r.factura_radicada && !r.factura_radicada_fecha ? 'Radicada (sin fecha registrada)' : '' },
+      estado: (r.factura_radicada || r.factura_radicada_fecha) ? 'hecho' : (r.fecha_llegada_firplak ? 'revisar' : 'pendiente'),
+      nota: r.factura_radicada && !r.factura_radicada_fecha ? 'Radicada (sin fecha registrada)' : r.factura_radicada_fecha && !r.factura_radicada ? 'Radicada según contabilidad; la casilla «Factura radicada» sigue en No' : '' },
   ];
 }
 const PAGO_TXT = { hecho: 'Hecho', pendiente: 'Pendiente', revisar: 'Revisar', na: 'No aplica' };
