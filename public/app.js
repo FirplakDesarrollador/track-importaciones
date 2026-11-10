@@ -18,10 +18,10 @@ const FIELDS = [
   { k: 'responsable_id', sp: 'Responsable', label: 'Responsable', t: 'responsable', sec: 'po' },
   { k: 'fecha_envio_oc', sp: 'Fecha_Envio_OC', label: 'Fecha envío OC', t: 'date', sec: 'po' },
   { k: 'eta_segun_oc', sp: 'ETA_Segun_OC', label: 'ETA según OC', t: 'date', sec: 'po' },
-  { k: 'eta_estimada_fpk', sp: 'ETA_Estimada_FPK', label: 'ETA estimada FPK', t: 'date', sec: 'po' },
-  { k: 'estado_eta', sp: 'Estado_ETA', label: 'Estado ETA', t: 'select', opts: ESTADOS, req: true, sec: 'po' },
+  { k: 'eta_estimada_fpk', sp: 'ETA_Estimada_FPK', label: 'ETA estimada por Firplak', t: 'date', sec: 'po' },
+  { k: 'estado_eta', sp: 'Estado_ETA', label: 'Estado', t: 'select', opts: ESTADOS, req: true, sec: 'po' },
   { k: 'condicion_pago', sp: 'Condicion_Pago', label: 'Condición de pago', t: 'text', list: COND_PAGO_SUG, sec: 'pago' },
-  { k: 'valor_po', sp: 'Valor_PO', label: 'Valor PO', t: 'number', step: '0.01', sec: 'pago' },
+  { k: 'valor_po', sp: 'Valor_PO', label: 'Valor PO (USD)', t: 'number', step: '0.01', sec: 'pago' },
   { k: 'anticipo1_fecha_pago', sp: 'Anticipo1_Fechapago', label: 'Anticipo 1 · fecha de pago', t: 'date', sec: 'pago' },
   { k: 'anticipo2_momento', sp: 'Anticipo2_Momento', label: 'Anticipo 2 · momento', t: 'select', opts: ANTICIPO2, blank: true, sec: 'pago' },
   { k: 'anticipo2_fecha_pago', sp: 'Anticipo2_FechaPago', label: 'Anticipo 2 · fecha de pago', t: 'date', sec: 'pago' },
@@ -43,7 +43,7 @@ const FIELDS = [
   { k: 'fecha_liquidacion', sp: 'Fecha_Liquidacion', label: 'Fecha liquidación', t: 'date', sec: 'hitos', hito: 'Liquidación' },
   { k: 'fecha_traslado', sp: 'Fecha_Traslado', label: 'Fecha traslado', t: 'date', sec: 'hitos', hito: 'Traslado' },
   { k: 'consolidada_con', sp: 'Consolidada_Con', label: 'Consolidada con', t: 'text', sec: 'otros', ph: 'Otras PO del mismo embarque' },
-  { k: 'leadtime_real_dias', sp: 'Leadtime_Real', label: 'Leadtime real (días)', t: 'computed', sec: 'otros' },
+  { k: 'leadtime_real_dias', sp: 'Leadtime_Real', label: 'Tiempo total (días)', t: 'computed', sec: 'otros' },
   { k: 'observaciones', sp: 'Observaciones', label: 'Observaciones', t: 'textarea', sec: 'otros' },
   { k: 'materiales', sp: 'Materiales OC', label: 'Materiales de la OC', t: 'materiales', sec: 'mat' },
 ];
@@ -73,7 +73,7 @@ const PAGO_CLS = { hecho: 'bg-emerald-50 text-emerald-800 border-emerald-200', p
   revisar: 'bg-amber-50 text-amber-800 border-amber-200', na: 'bg-white text-slate-600 border-slate-200' };
 function pagosMini(r) {
   return `<div class="mt-1 flex flex-wrap gap-1">${pagosDe(r).filter(p => p.estado !== 'na').map(p =>
-    `<span class="px-1.5 py-0.5 rounded border text-[11px] font-semibold ${PAGO_CLS[p.estado]}" title="${esc(p.nombre)}: ${PAGO_TXT[p.estado]}${p.fecha ? ' · ' + fdate(p.fecha) : ''}">${p.corto} ${p.estado === 'hecho' ? '✓' : p.estado === 'revisar' ? '!' : '·'}</span>`).join('')}</div>`;
+    `<span class="px-1.5 py-0.5 rounded border text-xs font-semibold ${PAGO_CLS[p.estado]}" title="${esc(p.nombre)}: ${PAGO_TXT[p.estado]}${p.fecha ? ' · ' + fdate(p.fecha) : ''}">${p.corto} ${p.estado === 'hecho' ? '✓' : p.estado === 'revisar' ? '!' : '·'}</span>`).join('')}</div>`;
 }
 function renderPagos(r) {
   $('pagos').innerHTML = `<div class="grid grid-cols-1 md:grid-cols-3 gap-3">${pagosDe(r).map(p => `
@@ -172,6 +172,9 @@ const todayBog = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bog
 const dnum = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 const ddiff = (a, b) => (a && b) ? Math.round(dnum(a) - dnum(b)) : null;  // a - b en días
 const fdate = s => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : '—';
+const fusd = v => (v === null || v === undefined || v === '') ? '—' : 'USD ' + Number(v).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Fechas en pantalla y en los campos: dd/mm/aaaa. En la base: aaaa-mm-dd.
+const parseFecha = t => { const m = String(t || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (!m) return undefined; const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; const d = new Date(iso + 'T00:00:00Z'); return isNaN(d) || d.toISOString().slice(0, 10) !== iso ? undefined : iso; };
 const fnum = (v, d = 2) => (v === null || v === undefined || v === '') ? '—' : Number(v).toLocaleString('es-CO', { maximumFractionDigits: d });
 const pct = (a, b) => b ? Math.round(1000 * a / b) / 10 : null;
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -186,7 +189,7 @@ function matSummary(r) {
 }
 function matTable(r) {
   const m = matList(r);
-  if (!m.length) return '<span class="text-slate-400">— Sin materiales registrados</span>';
+  if (!m.length) return '<span class="text-slate-600">— Sin materiales registrados</span>';
   return `<table class="mat-tbl"><thead><tr><th>Código SAP</th><th>Descripción</th><th class="num">Cantidad</th></tr></thead><tbody>${
     m.map(x => `<tr><td class="mono">${esc(x.codigo || '—')}</td><td>${esc(x.descripcion || '')}</td><td class="num">${fnum(x.cantidad, 3)}${x.unidad ? ' ' + esc(x.unidad) : ''}</td></tr>`).join('')}</tbody></table>`;
 }
@@ -214,7 +217,7 @@ const icons = () => window.lucide && lucide.createIcons();
 function toast(msg, ok = true) {
   const t = $('toast');
   t.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold ${ok ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`;
-  t.textContent = msg;
+  t.textContent = msg; t.setAttribute('role', ok ? 'status' : 'alert');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 4000);
 }
 
@@ -328,29 +331,30 @@ const ESTADO_CLS = {
   'Cancelada': 'bg-slate-100 text-slate-500 border-slate-200',
 };
 const PRIO_CLS = { 'Normal': 'bg-slate-100 text-slate-600', 'Prioritaria': 'bg-orange-100 text-orange-700', 'Estratégica': 'bg-fuchsia-100 text-fuchsia-700' };
-const badgeEstado = e => `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-semibold ${ESTADO_CLS[e] || ''}"><span class="w-1.5 h-1.5 rounded-full bg-current"></span>${esc(e)}</span>`;
-const badgePrio = p => `<span class="px-2 py-0.5 rounded-md text-[11px] font-bold ${PRIO_CLS[p] || PRIO_CLS.Normal}">${esc(p || 'Normal')}</span>`;
-const badgeVencida = () => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[11px] font-bold">⚠ Vencida</span>`;
+const badgeEstado = e => `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold ${ESTADO_CLS[e] || ''}"><span class="w-1.5 h-1.5 rounded-full bg-current"></span>${esc(e)}</span>`;
+const badgePrio = p => `<span class="px-2 py-0.5 rounded-md text-xs font-bold ${PRIO_CLS[p] || PRIO_CLS.Normal}">${esc(p || 'Normal')}</span>`;
+const badgeVencida = () => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 text-xs font-bold">⚠ Vencida</span>`;
 
 // Días vs ETA: activas → hoy vs ETA estimada FPK (o ETA OC), igual que la marca "vencida" de la vista;
 // llegadas → llegada Firplak vs ETA según OC (columna dias_vs_eta_oc de la vista)
 function diasVsEta(r) {
   if (r.dias_vs_eta_oc !== null && r.dias_vs_eta_oc !== undefined) {
     const d = r.dias_vs_eta_oc;
-    return d <= 0 ? `<span class="text-emerald-700 font-semibold" title="Llegó vs ETA según OC">${d === 0 ? 'En fecha' : d + ' d'} ✓</span>`
-      : `<span class="text-rose-700 font-semibold" title="Llegó vs ETA según OC">+${d} d tarde</span>`;
+    return d <= 0 ? `<span class="text-emerald-700 font-semibold" title="Llegada frente a la ETA según OC">${d === 0 ? 'En fecha' : d + ' d'} ✓</span>`
+      : `<span class="text-rose-700 font-semibold" title="Llegada frente a la ETA según OC">+${d} d tarde</span>`;
   }
   if (CERRADOS.includes(estadoPor(r))) return '<span class="text-slate-500">—</span>';
   const ref = etaRef(r);
-  if (!ref) return '<span class="text-slate-400">Sin ETA</span>';
+  if (!ref) return '<span class="text-slate-600">Sin ETA</span>';
   const d = ddiff(todayBog(), ref);
-  return d > 0 ? `<span class="inline-flex px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold">+${d} d vencida</span>`
+  return d > 0 ? `<span class="inline-flex px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold">+${d} d vencida</span>`
     : `<span class="text-slate-600">faltan ${-d} d</span>`;
 }
 
 // ------------------------------------------------------------------ carga de datos
 async function loadAll() {
   $('errorBanner').classList.add('hidden');
+  const rb = $('btnReload'); rb.disabled = true; rb.setAttribute('aria-busy', 'true'); rb.classList.add('is-loading');
   try {
     const [rows, resp] = await Promise.all([
       api('v_importaciones_metricas?select=*&order=numero_po.asc'),
@@ -370,7 +374,7 @@ async function loadAll() {
     if (e.auth) return;
     $('errorBannerText').textContent = 'No pude leer los datos: ' + friendlyError(e);
     $('errorBanner').classList.remove('hidden');
-  }
+  } finally { rb.disabled = false; rb.removeAttribute('aria-busy'); rb.classList.remove('is-loading'); }
   icons();
 }
 
@@ -408,9 +412,9 @@ function renderStats() {
 
 // ------------------------------------------------------------------ lista
 function badgeEstanc(ev) {
-  if (ev.nivel === 'atrasada') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-amber-50 text-amber-800 border-amber-200 text-[11px] font-bold whitespace-nowrap" title="Atrasada: supera el límite de ${ev.umbral} días para este tramo">${ev.dias} d · límite ${ev.umbral}</span>`;
-  if (ev.nivel === 'sin_actualizar') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-slate-100 text-slate-600 border-slate-200 text-[11px] font-semibold whitespace-nowrap" title="Sin hitos ni ediciones hace ${ev.dias} días: probablemente ya avanzó. Actualiza las fechas.">Sin actualizar · ${ev.dias} d</span>`;
-  if (ev.nivel === 'ok') return `<span class="text-slate-600 text-[11px] whitespace-nowrap">${ev.dias} d${ev.umbral != null ? ' de ' + ev.umbral : ''}</span>`;
+  if (ev.nivel === 'atrasada') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-amber-50 text-amber-800 border-amber-200 text-xs font-bold whitespace-nowrap" title="Atrasada: supera el límite de ${ev.umbral} días para este tramo">${ev.dias} d · límite ${ev.umbral}</span>`;
+  if (ev.nivel === 'sin_actualizar') return `<span class="inline-flex items-center px-2 py-0.5 rounded-md border bg-slate-100 text-slate-600 border-slate-200 text-xs font-semibold whitespace-nowrap" title="Sin hitos ni ediciones hace ${ev.dias} días: probablemente ya avanzó. Actualiza las fechas.">Sin actualizar · ${ev.dias} d</span>`;
+  if (ev.nivel === 'ok') return `<span class="text-slate-600 text-xs whitespace-nowrap">${ev.dias} d${ev.umbral != null ? ' de ' + ev.umbral : ''}</span>`;
   return '';
 }
 function hitoActualHtml(r) {
@@ -418,7 +422,7 @@ function hitoActualHtml(r) {
   if (ev.nivel === 'cerrada') return '<span class="text-slate-500">—</span>';
   const u = ev.u;
   return `<div class="text-slate-800 font-medium whitespace-nowrap">${u ? esc(u.h.hito) : 'Sin hitos'}</div>
-    <div class="text-[11px] text-slate-600 whitespace-nowrap">${u ? fdate(u.fecha) : (r.fecha_envio_oc ? 'OC ' + fdate(r.fecha_envio_oc) : '')}${ev.sig ? ' → ' + esc(ev.sig.hito) : ''}</div>
+    <div class="text-xs text-slate-600 whitespace-nowrap">${u ? fdate(u.fecha) : (r.fecha_envio_oc ? 'OC ' + fdate(r.fecha_envio_oc) : '')}${ev.sig ? ' → ' + esc(ev.sig.hito) : ''}</div>
     <div class="mt-0.5">${badgeEstanc(ev)}</div>`;
 }
 const NIVEL_ORDEN = { atrasada: 0, sin_actualizar: 2, ok: 3, sin_fecha: 3, cerrada: 4 };
@@ -447,14 +451,14 @@ function renderList() {
   sortRows(rows, $('fOrden').value);
   $('listCount').textContent = `${rows.length} PO mostradas`;
   $('listBody').innerHTML = rows.length ? rows.map(r => `
-    <tr class="hover:bg-slate-50 cursor-pointer ${r._venc ? 'row-vencida' : ''}" data-id="${esc(r.id)}">
-      <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[110px] max-w-[160px] break-words">${r._venc ? '<span class="text-rose-600 text-[11px]" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}<div class="mt-1 font-normal">${badgePrio(r.prioridad)}</div></td>
-      <td class="px-3 py-2.5 min-w-[180px] max-w-[260px]"><div class="font-medium text-slate-800 text-xs sm:text-[13px]">${esc(r.proveedor)}</div><div class="text-[11px] text-slate-500">${esc(r.pais || '')}</div>${matSummary(r)}</td>
+    <tr class="row-link hover:bg-slate-50 cursor-pointer ${r._venc ? 'row-vencida' : ''}" data-id="${esc(r.id)}" tabindex="0" aria-label="Abrir PO ${esc(r.numero_po)}">
+      <td class="px-3 py-2.5 font-bold text-slate-900 min-w-[110px] max-w-[160px] break-words">${r._venc ? '<span class="text-rose-600 text-xs" title="Vencida">⚠</span> ' : ''}${esc(r.numero_po)}<div class="mt-1 font-normal">${badgePrio(r.prioridad)}</div></td>
+      <td class="px-3 py-2.5 min-w-[180px] max-w-[260px]"><div class="font-medium text-slate-800 text-xs sm:text-sm">${esc(r.proveedor)}</div><div class="text-xs text-slate-500">${esc(r.pais || '')}</div>${matSummary(r)}</td>
       <td class="px-3 py-2.5 text-slate-700">${esc(r.responsable || '—')}</td>
       <td class="px-3 py-2.5 whitespace-nowrap">${badgeEstado(r._estado)}${CERRADOS.includes(r._estado) ? '' : pagosMini(r)}</td>
       <td class="px-3 py-2.5 text-xs">${hitoActualHtml(r)}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap text-slate-700"><div title="ETA estimada FPK">${fdate(r.eta_estimada_fpk)}</div><div class="text-[11px] text-slate-600" title="ETA según OC">OC ${fdate(r.eta_segun_oc)}</div></td>
-      <td class="px-3 py-2.5 text-slate-600"><div>${esc(r.embarcador || '—')}</div>${r.tipo_carga ? `<span class="px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-semibold text-slate-600">${esc(r.tipo_carga)}</span>` : ''}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap text-slate-700"><div title="ETA estimada FPK">${fdate(r.eta_estimada_fpk)}</div><div class="text-xs text-slate-600" title="ETA según OC">OC ${fdate(r.eta_segun_oc)}</div></td>
+      <td class="px-3 py-2.5 text-slate-600"><div>${esc(r.embarcador || '—')}</div>${r.tipo_carga ? `<span class="px-1.5 py-0.5 bg-slate-100 rounded text-xs font-semibold text-slate-600">${esc(r.tipo_carga)}</span>` : ''}</td>
       <td class="px-3 py-2.5 whitespace-nowrap text-xs">${diasVsEta(r)}</td>
     </tr>`).join('')
     : `<tr><td colspan="8" class="px-4 py-10 text-center text-slate-600">No hay PO con esos filtros. <button type="button" class="ml-2 text-blue-700 font-semibold underline" data-clear>Limpiar filtros</button></td></tr>`;
@@ -471,9 +475,9 @@ function fieldDisplay(f, r) {
     case 'proveedor': return esc(r.proveedor);
     case 'responsable': return esc(r.responsable || '—');
     case 'date': return fdate(v);
-    case 'number': return f.k === 'valor_po' ? (v == null ? '—' : '$ ' + fnum(v)) : fnum(v, 3);
+    case 'number': return f.k === 'valor_po' ? fusd(v) : fnum(v, 3);
     case 'bool': return v ? '<span class="text-emerald-700">✓ Sí</span>' : '<span class="text-slate-500">No</span>';
-    case 'computed': return v == null ? '<span class="text-slate-400">— (falta llegada a Firplak)</span>' : `${v} días <span class="text-[10px] text-slate-400 font-normal">(calculado)</span>`;
+    case 'computed': return v == null ? '<span class="text-slate-600">— (falta llegada a Firplak)</span>' : `${v} días <span class="text-xs text-slate-600 font-normal">(calculado: llegada a Firplak − envío OC)</span>`;
     case 'materiales': return matTable(r);
     case 'select': return f.k === 'estado_eta' ? badgeEstado(v) : f.k === 'prioridad' ? badgePrio(v) : esc(v || '—');
     default: return v ? esc(v) : '—';
@@ -484,19 +488,19 @@ function renderDetail() {
   $('detailEmpty').classList.toggle('hidden', !!r); $('detailContent').classList.toggle('hidden', !r);
   if (!r) return;
   $('dPo').textContent = r.numero_po; $('dProveedor').textContent = r.proveedor; $('dPais').textContent = r.pais || '—';
-  $('dEstado').innerHTML = badgeEstado(r._estado) + (r.estado_eta && r.estado_eta !== r._estado ? ` <span class="text-[11px] text-slate-600" title="El estado se calcula con las fechas; el valor manual queda como respaldo">(manual: ${esc(r.estado_eta)})</span>` : '');
+  $('dEstado').innerHTML = badgeEstado(r._estado) + (r.estado_eta && r.estado_eta !== r._estado ? ` <span class="text-xs text-slate-600" title="El estado se calcula con las fechas; el valor manual queda como respaldo">(manual: ${esc(r.estado_eta)})</span>` : '');
   $('dPrioridad').innerHTML = badgePrio(r.prioridad);
   $('dVencida').innerHTML = (r._venc ? badgeVencida() : '') + ' ' + badgeEstanc(r._est);
   const lt = r.leadtime_real_dias;
   $('dLeadBadge').innerHTML = `
-    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Leadtime real</div>
+    <div class="text-xs uppercase tracking-wider text-slate-600 font-bold">Tiempo total</div>
     <div class="text-xl font-extrabold text-slate-900">${lt == null ? '—' : lt + ' d'}</div>
-    <div class="text-[11px] ${r.llego_a_tiempo === true ? 'text-emerald-700' : r.llego_a_tiempo === false ? 'text-rose-700' : 'text-slate-400'} font-semibold">
-      ${r.llego_a_tiempo === true ? `A tiempo vs ETA OC (${r.dias_vs_eta_oc} d)` : r.llego_a_tiempo === false ? `Tarde vs ETA OC (+${r.dias_vs_eta_oc} d)` : 'Sin llegada a Firplak'}</div>`;
+    <div class="text-xs ${r.llego_a_tiempo === true ? 'text-emerald-700' : r.llego_a_tiempo === false ? 'text-rose-700' : 'text-slate-600'} font-semibold">
+      ${r.llego_a_tiempo === true ? `A tiempo frente a ETA OC (${r.dias_vs_eta_oc} d)` : r.llego_a_tiempo === false ? `Tarde frente a ETA OC (+${r.dias_vs_eta_oc} d)` : 'Sin llegada a Firplak'}</div>`;
   renderStepper(r); renderPagos(r); renderHistorial(r);
   $('detailFields').innerHTML = FIELDS.map((f, i) => `
     <div class="fld ${f.k === 'observaciones' || f.k === 'materiales' ? 'sm:col-span-2 lg:col-span-3' : ''}">
-      <div class="k">${i + 1}. ${esc(f.label)} <span class="text-slate-300">· ${esc(f.sp)}</span></div>
+      <div class="k">${esc(f.label)}</div>
       <div class="v">${fieldDisplay(f, r)}</div>
     </div>`).join('');
   $('dMeta').textContent = `Creada: ${r.created_at ? new Date(r.created_at).toLocaleString('es-CO', { timeZone: 'America/Bogota' }) : '—'} · Última edición: ${r.updated_at ? new Date(r.updated_at).toLocaleString('es-CO', { timeZone: 'America/Bogota' }) : '—'} (hora Bogotá)`;
@@ -523,19 +527,19 @@ function renderStepper(r) {
     if (done) prevDate = v;
     const cls = isLast ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-300 ring-offset-1'
       : done ? 'bg-emerald-50/50 border-emerald-300' : isNext ? 'bg-white border-dashed border-blue-300 shadow-sm' : 'bg-slate-50/60 border-slate-200 opacity-60';
-    const tag = isLast ? 'Último' : done ? 'Completado' : isNext ? 'Siguiente' : 'Pendiente';
-    const tagCls = isLast ? 'text-blue-700 font-bold' : done ? 'text-emerald-700' : isNext ? 'text-blue-600' : 'text-slate-400';
+    const tag = isLast ? 'Último' : done ? 'Hecho' : isNext ? 'Siguiente' : 'Pendiente';
+    const tagCls = isLast ? 'text-blue-700 font-bold' : done ? 'text-emerald-700' : isNext ? 'text-blue-600' : 'text-slate-600';
     return `<div class="p-3 rounded-xl border flex flex-col justify-between ${cls}">
       <div>
         <div class="flex items-center justify-between mb-2">
           <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${done ? (isLast ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white') : isNext ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'}">${done && !isLast ? '✓' : i + 1}</span>
-          <span class="text-[10px] font-semibold uppercase tracking-wider ${tagCls}">${tag}</span>
+          <span class="text-xs font-semibold ${tagCls}">${tag}</span>
         </div>
         <h4 class="text-xs font-bold text-slate-800 leading-snug">${esc(h.hito)}</h4>
       </div>
-      <div class="mt-3 pt-2 border-t border-slate-200/60 text-[11px]">
-        ${done ? `<div class="text-slate-700 font-medium">${fdate(v)}</div>${r[h.k + '_fuente'] && r[h.k + '_fuente'] !== 'manual' ? `<div class="text-[11px] text-slate-600">${esc(fuenteTxt(r[h.k + '_fuente']))}</div>` : ''}<div class="text-[10px] ${gap < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${gap === null ? '' : (i === 0 ? 'desde OC: ' : '') + (gap >= 0 ? '+' : '') + gap + ' d'}</div>`
-        : `<span class="text-slate-400 italic">${isNext ? 'Por registrar' : 'En espera'}</span>`}
+      <div class="mt-3 pt-2 border-t border-slate-200/60 text-xs">
+        ${done ? `<div class="text-slate-700 font-medium">${fdate(v)}</div>${r[h.k + '_fuente'] && r[h.k + '_fuente'] !== 'manual' ? `<div class="text-xs text-slate-600">${esc(fuenteTxt(r[h.k + '_fuente']))}</div>` : ''}<div class="text-xs ${gap < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${gap === null ? '' : (i === 0 ? 'desde OC: ' : '') + (gap >= 0 ? '+' : '') + gap + ' d'}</div>`
+        : `<span class="text-slate-600 italic">${isNext ? 'Por registrar' : 'En espera'}</span>`}
       </div></div>`;
   }).join('');
   $('stepper').innerHTML = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 stepper-10 gap-3">${cards}</div>`;
@@ -551,10 +555,10 @@ function inputHtml(f) {
   let ctl;
   switch (f.t) {
     case 'proveedor': ctl = `<select ${base}><option value="">— Escoge el proveedor —</option>${S.proveedores.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.pais ? ' · ' + esc(p.pais) : ''}</option>`).join('')}</select>`; break;
-    case 'responsable': ctl = `<select ${base}><option value="">— Sin asignar —</option>${S.responsables.map(r => `<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}</select><div id="respHint" class="text-[11px] text-slate-400 mt-1"></div>`; break;
+    case 'responsable': ctl = `<select ${base}><option value="">— Sin asignar —</option>${S.responsables.map(r => `<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}</select><div id="respHint" class="text-xs text-slate-600 mt-1"></div>`; break;
     case 'select': ctl = `<select ${base}>${f.blank ? '<option value="">—</option>' : ''}${f.opts.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`; break;
     case 'bool': ctl = `<select ${base}><option value="false">No</option><option value="true">Sí</option></select>`; break;
-    case 'date': ctl = `<input type="date" ${base}>`; break;
+    case 'date': ctl = `<input type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="off" data-fecha ${base}>`; break;
     case 'number': ctl = `<input type="number" min="0" step="${f.step}" ${base}>`; break;
     case 'textarea': ctl = `<textarea rows="3" ${base}></textarea>`; break;
     case 'materiales': ctl = `<div id="${id}" class="mat-editor"><div class="mat-row mat-head"><span>Código SAP</span><span>Descripción</span><span>Cantidad</span><span>Unidad</span><span></span></div><div class="mat-rows"></div><button type="button" class="mat-add" id="btnMatAdd">+ Agregar línea</button></div>`; break;
@@ -589,14 +593,14 @@ function openForm(row) {
   buildForm();
   $('formErrors').classList.add('hidden');
   if (row) {
-    FIELDS.forEach(f => { const el = $('in_' + f.k); if (!el || f.t === 'computed') return; if (f.t === 'materiales') { matSetEditor(matList(row)); return; } const v = row[f.k]; el.value = v === null || v === undefined ? '' : String(v); });
+    FIELDS.forEach(f => { const el = $('in_' + f.k); if (!el || f.t === 'computed') return; if (f.t === 'materiales') { matSetEditor(matList(row)); return; } const v = row[f.k]; el.value = v === null || v === undefined ? '' : f.t === 'date' ? fdate(v) : String(v); });
     $('in_leadtime_real_dias').textContent = row.leadtime_real_dias == null ? 'Se calcula solo: llegada a Firplak − envío OC' : `${row.leadtime_real_dias} días (calculado)`;
     $('formTitle').textContent = `Editar PO ${row.numero_po}`;
     $('formSubtitle').textContent = `${row.proveedor} · solo se guardan los campos que cambies.`;
     $('btnSaveLabel').textContent = 'Guardar cambios'; $('navFormLabel').textContent = 'Editar PO';
   } else {
     $('in_prioridad').value = 'Normal'; $('in_estado_eta').value = 'En producción'; $('in_factura_radicada').value = 'false';
-    $('in_fecha_envio_oc').value = todayBog();
+    $('in_fecha_envio_oc').value = fdate(todayBog());
     $('formTitle').textContent = 'Registrar Nueva PO de Importación';
     $('formSubtitle').textContent = 'Al escoger el proveedor se asigna el responsable según el reparto (puedes cambiarlo).';
     $('btnSaveLabel').textContent = 'Guardar PO'; $('navFormLabel').textContent = 'Nueva PO';
@@ -610,6 +614,7 @@ function readForm() {
     if (f.t === 'materiales') { o[k] = matReadEditor(); return; }
     if (f.t === 'bool') v = v === 'true';
     else if (f.t === 'number') v = v === '' ? null : Number(v);
+    else if (f.t === 'date') { v = (v || '').trim(); v = v === '' ? null : (parseFecha(v) ?? 'invalida:' + v); }
     else { v = (v || '').trim(); if (v === '') v = null; }
     o[k] = v;
   });
@@ -619,6 +624,7 @@ function validate(o) {
   const errs = [], warns = [];
   document.querySelectorAll('#poForm .err').forEach(e => e.classList.remove('err'));
   const bad = (k, m) => { errs.push(m); $('in_' + k)?.classList.add('err'); };
+  FIELDS.filter(f => f.t === 'date').forEach(f => { if (String(o[f.k] || '').startsWith('invalida:')) bad(f.k, `${f.label}: escribe la fecha como dd/mm/aaaa.`); });
   if (!o.proveedor_id) bad('proveedor_id', 'Escoge el proveedor.');
   if (!o.numero_po) bad('numero_po', 'El # PO es obligatorio.');
   else if (S.rows.some(r => r.numero_po.trim().toLowerCase() === o.numero_po.toLowerCase() && (!S.editing || r.id !== S.editing.id)))
@@ -636,12 +642,34 @@ function validate(o) {
   if (o.eta_segun_oc && o.fecha_envio_oc && o.eta_segun_oc < o.fecha_envio_oc) warns.push('La ETA según OC es anterior al envío de la OC.');
   return { errs, warns };
 }
+// ------------------------------------------------------------------ modales: Esc cierra, el foco queda adentro y vuelve al botón que lo abrió
+const MODAL = { el: null, onClose: null, back: null };
+function openModal(el, onClose, first) {
+  MODAL.el = el; MODAL.onClose = onClose; MODAL.back = document.activeElement;
+  el.classList.remove('hidden');
+  setTimeout(() => (first || el.querySelector('input,select,textarea,button'))?.focus(), 0);
+}
+function closeModal() {
+  const m = MODAL; if (!m.el) return;
+  m.el.classList.add('hidden'); MODAL.el = null;
+  const cb = m.onClose; MODAL.onClose = null; if (m.back && m.back.focus) m.back.focus(); if (cb) cb();
+}
+document.addEventListener('keydown', e => {
+  if (!MODAL.el) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+  if (e.key !== 'Tab') return;
+  const f = [...MODAL.el.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex="0"]')].filter(x => x.offsetParent !== null);
+  if (!f.length) return;
+  const a = f[0], z = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+  else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+});
 function confirmWarnings(warns) {
   return new Promise(res => {
     $('modalConfirmBody').innerHTML = '<ul class="list-disc pl-5 space-y-1">' + warns.map(w => `<li>${esc(w)}</li>`).join('') + '</ul><p class="text-xs text-slate-500 pt-2">Si las fechas son correctas así, puedes guardar de todos modos.</p>';
-    $('modalConfirm').classList.remove('hidden');
-    const done = v => { $('modalConfirm').classList.add('hidden'); $('modalConfirmYes').onclick = $('modalConfirmNo').onclick = null; res(v); };
-    $('modalConfirmYes').onclick = () => done(true); $('modalConfirmNo').onclick = () => done(false);
+    let val = false;
+    openModal($('modalConfirm'), () => { $('modalConfirmYes').onclick = $('modalConfirmNo').onclick = null; res(val); }, $('modalConfirmNo'));
+    $('modalConfirmYes').onclick = () => { val = true; closeModal(); }; $('modalConfirmNo').onclick = () => { val = false; closeModal(); };
   });
 }
 // Construye el cuerpo exacto que se envía (exportada para pruebas)
@@ -668,7 +696,7 @@ async function saveForm() {
   if (!['Cancelada', 'Terminada'].includes(o.estado_eta)) o.estado_eta = estadoPor(o);   // el estado sale de las fechas
   const { errs, warns } = validate(o);
   const box = $('formErrors');
-  if (errs.length) { box.innerHTML = '<strong>Corrige antes de guardar:</strong><ul class="list-disc pl-5 mt-1">' + errs.map(e => `<li>${esc(e)}</li>`).join('') + '</ul>'; box.classList.remove('hidden'); return; }
+  if (errs.length) { box.setAttribute('role', 'alert'); box.innerHTML = '<strong>Corrige antes de guardar:</strong><ul class="list-disc pl-5 mt-1">' + errs.map(e => `<li>${esc(e)}</li>`).join('') + '</ul>'; box.classList.remove('hidden'); return; }
   box.classList.add('hidden');
   if (warns.length && !(await confirmWarnings(warns))) return;
   const body = buildPayload(o, S.editing);
@@ -724,14 +752,14 @@ function openSplit() {
       mats.map((x, i) => `<tr><td class="mono">${esc(x.codigo || '—')}</td><td>${esc(x.descripcion || '')}</td><td class="num">${fnum(x.cantidad, 3)}${x.unidad ? ' ' + esc(x.unidad) : ''}</td>
         <td class="num"><input class="inp split-q" type="number" min="0" step="any" data-i="${i}" value="0"></td></tr>`).join('')}</tbody></table>
       <div class="mt-2 flex gap-3"><button type="button" class="mat-add" id="spAll">Pasar todo</button><button type="button" class="mat-add" id="spNone">Nada</button></div>`
-    : '<span class="text-slate-400">Esta PO no tiene materiales registrados; el parcial se crea sin materiales.</span>'}</div>
+    : '<span class="text-slate-600">Esta PO no tiene materiales registrados; el parcial se crea sin materiales.</span>'}</div>
     <div id="splitErr" class="hidden form-err"></div>`;
   if (mats.length) {
     $('spAll').onclick = () => document.querySelectorAll('.split-q').forEach(el => el.value = mats[el.dataset.i].cantidad ?? 0);
     $('spNone').onclick = () => document.querySelectorAll('.split-q').forEach(el => el.value = 0);
   }
-  $('modalSplit').classList.remove('hidden'); icons();
-  $('splitCancel').onclick = () => $('modalSplit').classList.add('hidden');
+  openModal($('modalSplit'), null, $('spNuevo')); icons();
+  $('splitCancel').onclick = closeModal;
   $('splitOk').onclick = () => doSplit(r, nm);
 }
 // Calcula el resultado (exportada para pruebas): { errs, origen, parcial }
@@ -780,7 +808,7 @@ async function doSplit(r, nm) {
       const upd = await api('importaciones?id=eq.' + encodeURIComponent(r.id), { method: 'PATCH', body: plan.origen });
       if (Array.isArray(upd) && !upd.length) throw new Error('No se actualizó la PO de origen (¿permisos?).');
     }
-    $('modalSplit').classList.add('hidden');
+    closeModal();
     toast(`Parcial ${plan.parcial.numero_po} creado${plan.origen.numero_po ? ` y la PO quedó como ${plan.origen.numero_po}` : ''}.`);
     await loadAll();
     if (created) openDetail(created.id);
@@ -802,42 +830,42 @@ function aggregate(rows, keyFn) {
   });
   return [...m.values()].map(a => ({ ...a, pct: pct(a.ok, a.n), ltAvg: a.lt.length ? a.lt.reduce((s, x) => s + x, 0) / a.lt.length : null, dvAvg: a.dv.length ? a.dv.reduce((s, x) => s + x, 0) / a.dv.length : null }));
 }
-const pctCls = p => p === null ? 'text-slate-400' : p >= 80 ? 'text-emerald-700' : p >= 60 ? 'text-amber-700' : 'text-rose-700';
+const pctCls = p => p === null ? 'text-slate-600' : p >= 80 ? 'text-emerald-700' : p >= 60 ? 'text-amber-700' : 'text-rose-700';
 function kpiTable(list, label, fmtKey = k => esc(k)) {
-  return `<div class="overflow-x-auto"><table class="ktbl"><thead><tr><th>${esc(label)}</th><th class="n">PO llegadas</th><th class="n">A tiempo</th><th class="n">% cumplim.</th><th class="n">Leadtime prom. (d)</th><th class="n">Días prom. vs ETA OC</th></tr></thead><tbody>
+  return `<div class="overflow-x-auto"><table class="ktbl"><thead><tr><th>${esc(label)}</th><th class="n">PO llegadas</th><th class="n">A tiempo</th><th class="n">% a tiempo</th><th class="n">Tiempo total prom. (d)</th><th class="n">Días prom. frente a ETA OC</th></tr></thead><tbody>
   ${list.map(a => `<tr><td class="font-medium text-slate-800">${fmtKey(a.key)}</td><td class="n">${a.n}</td><td class="n">${a.ok}</td><td class="n font-bold ${pctCls(a.pct)}">${a.pct === null ? '—' : a.pct.toLocaleString('es-CO') + ' %'}</td><td class="n">${a.ltAvg === null ? '—' : fnum(a.ltAvg, 1)}</td><td class="n">${a.dvAvg === null ? '—' : (a.dvAvg > 0 ? '+' : '') + fnum(a.dvAvg, 1)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function svgMonth(list) {
-  if (!list.length) return '<p class="text-sm text-slate-400">Sin datos.</p>';
-  const W = Math.max(640, list.length * 70), H = 240, pl = 40, pr = 40, pt = 20, pb = 34, bw = Math.min(40, (W - pl - pr) / list.length * 0.6);
+  if (!list.length) return '<p class="text-sm text-slate-600">Sin datos.</p>';
+  const W = Math.max(640, list.length * 84), H = 250, pl = 44, pr = 84, pt = 24, pb = 36, bw = Math.min(40, (W - pl - pr) / list.length * 0.6);
   const maxLt = Math.max(...list.map(a => a.ltAvg || 0), 1);
   const x = i => pl + (i + 0.5) * (W - pl - pr) / list.length, yP = p => pt + (H - pt - pb) * (1 - p / 100), yL = l => pt + (H - pt - pb) * (1 - l / (maxLt * 1.1));
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:${W}px;max-height:260px" font-family="inherit">`;
-  [0, 25, 50, 75, 100].forEach(g => { s += `<line x1="${pl}" x2="${W - pr}" y1="${yP(g)}" y2="${yP(g)}" stroke="#f1f5f9"/><text x="${pl - 6}" y="${yP(g) + 3}" font-size="10" text-anchor="end" fill="#94a3b8">${g}%</text>`; });
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:${W}px;max-height:270px" font-family="inherit" role="img" aria-label="Cumplimiento y tiempo total por mes de llegada">`;
+  [0, 25, 50, 75, 100].forEach(g => { s += `<line x1="${pl}" x2="${W - pr}" y1="${yP(g)}" y2="${yP(g)}" stroke="#f1f5f9"/><text x="${pl - 6}" y="${yP(g) + 3}" font-size="12" text-anchor="end" fill="#475569">${g}%</text>`; });
   list.forEach((a, i) => {
     const p = a.pct || 0, c = a.pct >= 80 ? '#10b981' : a.pct >= 60 ? '#f59e0b' : '#f43f5e';
     s += `<rect x="${x(i) - bw / 2}" y="${yP(p)}" width="${bw}" height="${yP(0) - yP(p)}" rx="4" fill="${c}" opacity=".85"><title>${fmes(a.key)}: ${a.pct ?? 0}% (${a.ok}/${a.n})</title></rect>`;
-    s += `<text x="${x(i)}" y="${yP(p) - 4}" font-size="10" text-anchor="middle" fill="#334155" font-weight="700">${a.pct ?? 0}% · ${a.n}</text>`;
-    s += `<text x="${x(i)}" y="${H - pb + 14}" font-size="10" text-anchor="middle" fill="#64748b">${fmes(a.key)}</text>`;
+    s += `<text x="${x(i)}" y="${yP(p) - 4}" font-size="12" text-anchor="middle" fill="#334155" font-weight="700">${a.pct ?? 0}% · ${a.n}</text>`;
+    s += `<text x="${x(i)}" y="${H - pb + 14}" font-size="12" text-anchor="middle" fill="#475569">${fmes(a.key)}</text>`;
   });
   const pts = list.map((a, i) => a.ltAvg === null ? null : [x(i), yL(a.ltAvg)]).filter(Boolean);
   if (pts.length) {
     s += `<polyline fill="none" stroke="#2563eb" stroke-width="2" points="${pts.map(p => p.join(',')).join(' ')}"/>`;
-    list.forEach((a, i) => { if (a.ltAvg !== null) s += `<circle cx="${x(i)}" cy="${yL(a.ltAvg)}" r="3.5" fill="#2563eb"/><text x="${x(i) + 6}" y="${yL(a.ltAvg) + 12}" font-size="9" fill="#2563eb">${Math.round(a.ltAvg)} d</text>`; });
+    list.forEach((a, i) => { if (a.ltAvg !== null) s += `<circle cx="${x(i)}" cy="${yL(a.ltAvg)}" r="3.5" fill="#2563eb"/><text x="${x(i) + 6}" y="${yL(a.ltAvg) + 12}" font-size="12" fill="#2563eb">${Math.round(a.ltAvg)} d</text>`; });
   }
-  return s + `<text x="${W - pr + 4}" y="${pt + 4}" font-size="9" fill="#2563eb">leadtime</text></svg>`;
+  return s + `<text x="${W - pr + 4}" y="${pt + 4}" font-size="12" fill="#2563eb">tiempo total</text></svg>`;
 }
 function svgBarsH(list) {
-  const rows = list.filter(a => a.n > 0); if (!rows.length) return '';
-  const rh = 20, W = 560, lw = 210, H = rows.length * rh + 10;
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="inherit">`;
+  const rows = list.filter(a => a.n > 0).sort((a, b) => (b.pct - a.pct) || (b.n - a.n) || a.key.localeCompare(b.key)); if (!rows.length) return '';
+  const rh = 24, W = 600, lw = 230, H = rows.length * rh + 10;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="inherit" role="img" aria-label="Cumplimiento por proveedor, de mayor a menor">`;
   rows.forEach((a, i) => {
     const y = 5 + i * rh, w = (W - lw - 70) * (a.pct / 100), c = a.pct >= 80 ? '#10b981' : a.pct >= 60 ? '#f59e0b' : '#f43f5e';
-    const name = a.key.length > 32 ? a.key.slice(0, 31) + '…' : a.key;
-    s += `<text x="${lw - 6}" y="${y + 13}" font-size="10" text-anchor="end" fill="#334155">${esc(name)}</text>`;
+    const name = a.key.length > 30 ? a.key.slice(0, 29) + '…' : a.key;
+    s += `<text x="${lw - 6}" y="${y + 13}" font-size="12" text-anchor="end" fill="#334155">${esc(name)}</text>`;
     s += `<rect x="${lw}" y="${y + 3}" width="${W - lw - 70}" height="13" rx="3" fill="#f1f5f9"/><rect x="${lw}" y="${y + 3}" width="${Math.max(w, 1)}" height="13" rx="3" fill="${c}"/>`;
-    s += `<text x="${W - 64}" y="${y + 13}" font-size="10" fill="#334155" font-weight="700">${a.pct}% (${a.ok}/${a.n})</text>`;
+    s += `<text x="${W - 66}" y="${y + 14}" font-size="12" fill="#334155" font-weight="700">${a.pct}% (${a.ok}/${a.n})</text>`;
   });
   return s + '</svg>';
 }
@@ -845,10 +873,10 @@ function renderKpi() {
   const R = S.rows;
   const all = aggregate(R, () => 'Total')[0] || { n: 0, ok: 0, pct: null, ltAvg: null };
   const venc = R.filter(r => r._venc), act = R.filter(r => !CERRADOS.includes(r._estado));
-  const card = (t, v, sub, cls, ic) => `<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><div class="flex items-center justify-between"><span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">${t}</span><i data-lucide="${ic}" class="w-4 h-4 ${cls}"></i></div><div class="text-3xl font-extrabold mt-1 ${cls}">${v}</div><div class="text-xs text-slate-500 mt-1">${sub}</div></div>`;
+  const card = (t, v, sub, cls, ic) => `<div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><div class="flex items-center justify-between"><span class="text-xs uppercase tracking-wider font-bold text-slate-600">${t}</span><i data-lucide="${ic}" class="w-4 h-4 ${cls}"></i></div><div class="text-3xl font-extrabold mt-1 ${cls}">${v}</div><div class="text-xs text-slate-500 mt-1">${sub}</div></div>`;
   $('kpiCards').innerHTML =
     card('Cumplimiento vs ETA OC', all.pct === null ? '—' : all.pct.toLocaleString('es-CO') + ' %', `${all.ok} a tiempo de ${all.n} PO llegadas`, pctCls(all.pct), 'target') +
-    card('Leadtime real promedio', all.ltAvg === null ? '—' : fnum(all.ltAvg, 1) + ' d', `Envío OC → llegada Firplak (${all.lt ? all.lt.length : 0} PO)`, 'text-blue-700', 'timer') +
+    card('Tiempo total promedio', all.ltAvg === null ? '—' : fnum(all.ltAvg, 1) + ' d', `Envío OC → llegada Firplak (${all.lt ? all.lt.length : 0} PO)`, 'text-blue-700', 'timer') +
     card('PO activas', act.length, 'En producción, tránsito, aduana, conteo o liquidación', 'text-slate-800', 'package') +
     card('PO vencidas', venc.length, 'Activas con ETA (FPK u OC) ya pasada', 'text-rose-700', 'alert-circle');
   const byMonth = aggregate(R, r => r.fecha_llegada_firplak ? r.fecha_llegada_firplak.slice(0, 7) : null).sort((a, b) => a.key.localeCompare(b.key));
@@ -856,9 +884,9 @@ function renderKpi() {
   $('tblMonth').innerHTML = kpiTable(byMonth, 'Mes de llegada', k => esc(fmes(k)));
   const byProv = aggregate(R, r => r.proveedor).sort((a, b) => (b.n - a.n) || a.key.localeCompare(b.key));
   $('chartProv').innerHTML = svgBarsH(byProv) || '<p class="text-sm text-slate-600">Todavía no hay PO llegadas para comparar proveedores.</p>';
-  $('tblProv').innerHTML = kpiTable(byProv.filter(a => a.n > 0), 'Proveedor') + (byProv.some(a => !a.n) ? `<p class="text-[11px] text-slate-400 mt-2">Sin llegadas aún: ${byProv.filter(a => !a.n).map(a => esc(a.key)).join(', ')}.</p>` : '');
+  $('tblProv').innerHTML = kpiTable(byProv.filter(a => a.n > 0), 'Proveedor') + (byProv.some(a => !a.n) ? `<p class="text-xs text-slate-600 mt-2">Sin llegadas aún: ${byProv.filter(a => !a.n).map(a => esc(a.key)).join(', ')}.</p>` : '');
   $('tblResp').innerHTML = kpiTable(aggregate(R, r => r.responsable || 'Sin asignar').sort((a, b) => a.key.localeCompare(b.key)), 'Responsable');
-  $('tblVencidas').innerHTML = venc.length ? `<table class="ktbl"><thead><tr><th># PO</th><th>Proveedor</th><th>Responsable</th><th>Estado</th><th class="n">ETA ref.</th><th class="n">Días</th></tr></thead><tbody>${venc.sort((a, b) => (a.eta_estimada_fpk || a.eta_segun_oc).localeCompare(b.eta_estimada_fpk || b.eta_segun_oc)).map(r => { const ref = r.eta_estimada_fpk || r.eta_segun_oc; return `<tr class="cursor-pointer hover:bg-rose-50" data-id="${esc(r.id)}"><td class="font-bold">${esc(r.numero_po)}</td><td>${esc(r.proveedor)}</td><td>${esc(r.responsable || '—')}</td><td>${esc(r._estado)}</td><td class="n">${fdate(ref)}</td><td class="n text-rose-700 font-bold">+${ddiff(todayBog(), ref)}</td></tr>`; }).join('')}</tbody></table>` : '<p class="text-sm text-slate-400">No hay PO vencidas.</p>';
+  $('tblVencidas').innerHTML = venc.length ? `<table class="ktbl"><thead><tr><th># PO</th><th>Proveedor</th><th>Responsable</th><th>Estado</th><th class="n">ETA usada</th><th class="n">Días</th></tr></thead><tbody>${venc.sort((a, b) => (a.eta_estimada_fpk || a.eta_segun_oc).localeCompare(b.eta_estimada_fpk || b.eta_segun_oc)).map(r => { const ref = r.eta_estimada_fpk || r.eta_segun_oc; return `<tr class="row-link cursor-pointer hover:bg-rose-50" data-id="${esc(r.id)}" tabindex="0" aria-label="Abrir PO ${esc(r.numero_po)}"><td class="font-bold">${esc(r.numero_po)}</td><td>${esc(r.proveedor)}</td><td>${esc(r.responsable || '—')}</td><td>${esc(r._estado)}</td><td class="n">${fdate(ref)}</td><td class="n text-rose-700 font-bold">+${ddiff(todayBog(), ref)}</td></tr>`; }).join('')}</tbody></table>` : '<p class="text-sm text-slate-600">No hay PO vencidas.</p>';
   icons();
 }
 
@@ -879,11 +907,17 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btnReload').addEventListener('click', loadAll); $('btnRetry').addEventListener('click', () => (AUTH_REQUIRED && !SB) ? initAuth() : loadAll());
   $('listBody').addEventListener('click', e => { if (e.target.closest('[data-clear]')) { clearFilters(); return; } const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
   $('tblVencidas').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) openDetail(tr.dataset.id); });
+  ['listBody', 'tblVencidas'].forEach(id => $(id).addEventListener('keydown', e => {
+    const tr = e.target.closest && e.target.closest('tr[data-id]');
+    if (tr && e.target === tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(tr.dataset.id); }
+  }));
   $('btnDetailToList').addEventListener('click', () => showTab('list'));
   $('btnBackList').addEventListener('click', () => showTab('list'));
   $('btnEditPo').addEventListener('click', () => S.current && openForm(S.current));
   $('btnSplitPo').addEventListener('click', openSplit);
   $('btnSaveForm').addEventListener('click', saveForm);
+  // Fechas dd/mm/aaaa: agrega las barras mientras se escribe
+  $('poForm').addEventListener('input', e => { const el = e.target; if (!el.matches('[data-fecha]') || e.inputType?.startsWith('delete')) return; const d = el.value.replace(/\D/g, '').slice(0, 8); el.value = d.length > 4 ? `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}` : d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d; });
   $('btnCancelForm').addEventListener('click', () => { const back = S.editing ? 'detail' : 'list'; S.editing = null; $('navFormLabel').textContent = 'Nueva PO'; showTab(back); });
   $('loginForm').addEventListener('submit', submitLogin);
   $('btnLogout').addEventListener('click', logout);
